@@ -9,7 +9,7 @@ tools! {
     enum Tool {
         #[tool(
             command = "wc",
-            description = "myown wc <options> <file> - myown wc -l file.txt",
+            description = "myown wc [-l] [-m] [-w] [-c] [file]",
             function = wc::wc_cli
         )]
         Wc,
@@ -21,7 +21,7 @@ tools! {
         JsonChecker,
         #[tool(
             command = "huffman",
-            description = "myown huffman <file> | myown huffman file.txt",
+            description = "myown huffman [--input file] [--output file] [--encode] [--decode]",
             function = huffman::huffman_cli
         )]
         Zip,
