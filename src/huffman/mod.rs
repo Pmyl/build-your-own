@@ -1,96 +1,296 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
-use std::io::{BufRead, BufReader, Read, stdin, Write};
+use std::io::{BufRead, BufReader, Read, stdin, stdout, Write};
+use std::cell::RefCell;
+use std::fmt::Display;
+use std::fmt::Formatter;
 
 // https://codingchallenges.fyi/challenges/challenge-huffman
 
 pub fn huffman_cli(args: &[&str]) {
-    huffman_cli_impl(args, &mut stdin());
+    huffman_cli_impl(args, stdin(), stdout());
 }
 
-fn huffman_cli_impl(args: &[&str], input: &mut impl Read) {
+fn huffman_cli_impl(args: &[&str], input: impl Read, output: impl Write) {
     let options = get_options(args);
 
+    let mut targets = HuffmanTargets::new(options.input_file, input);
+
+    let mut output: Box<dyn Write> = if let Some(file) = options.output_file {
+        Box::new(std::fs::File::open(file).expect("file not found"))
+    } else {
+        Box::new(output)
+    };
+
     if let HuffmanMode::Encode = options.mode {
-        let frequencies = if let Some(input_file) = options.input_file {
-            let mut file = std::fs::File::open(input_file).expect("file not found");
-            huffman_frequencies(&mut file)
-        } else {
-            huffman_frequencies(input)
-        };
+        let frequencies = huffman_frequencies(&mut targets.input());
         let root = huffman_tree(frequencies);
         let table = huffman_prefix_code_table(root.clone());
-        if let Some(input_file) = options.input_file {
-            let file = std::fs::File::open(input_file).expect("file not found");
-            write_huffman_file(options, file, table, root);
-        } else {
-            write_huffman_file(options, input, table, root);
-        };
+
+        println!("Table: {}", table);
+
+        write_huffman_file(
+            &mut targets.input(),
+            &mut output,
+            table,
+            root
+        );
     } else {
-        if let Some(input_file) = options.input_file {
-            let file = std::fs::File::open(input_file).expect("file not found");
-            read_huffman_file(options, file);
-        } else {
-            read_huffman_file(options, input);
-        };
+        read_huffman_file(
+            &mut targets.input(),
+            &mut output,
+        );
     }
 }
 
-fn write_huffman_file(options: HuffmanOptions, input: impl Read, table: HuffmanPrefixCodeTable, root: HuffmanNode) {
-    let mut output = std::fs::File::create(options.output_file).expect("cannot create output file");
+struct HuffmanTargets<'a> {
+    input: HuffmanTargetsInput<'a>,
+}
 
+enum HuffmanTargetsInput<'a> {
+    Content(Vec<u8>),
+    File(&'a str),
+}
+
+impl<'a> HuffmanTargets<'a> {
+    fn new(input_file: Option<&'a str>, input: impl Read) -> Self {
+        let input = if let Some(file) = input_file {
+            HuffmanTargetsInput::File(file)
+        } else {
+            let mut reader = BufReader::new(input);
+            let mut contents = Vec::new();
+            reader.read_to_end(&mut contents);
+            HuffmanTargetsInput::Content(contents)
+        };
+
+        Self {
+            input,
+        }
+    }
+
+    fn input(&'a self) -> Box<dyn Read + 'a> {
+        match self.input {
+            HuffmanTargetsInput::Content(ref content) => Box::new(content.as_slice()),
+            HuffmanTargetsInput::File(ref file) => Box::new(std::fs::File::open(file).expect("file not found"))
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Bits {
+    data: u8,
+    amount_of_bits: u8
+}
+
+impl Display for Bits {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut string = String::new();
+        let mut mask = 0b10000000;
+        for i in 0..self.amount_of_bits {
+            if self.data & mask == mask {
+                string = format!("{}1", string);
+            } else {
+                string = format!("{}0", string);
+            }
+            mask = mask >> 1;
+        }
+        write!(fmt, "{}", string)
+    }
+}
+
+impl Bits {
+    fn empty() -> Self {
+        Self { data: 0b0, amount_of_bits: 0 }
+    }
+
+    fn byte(byte: u8) -> Self {
+        Self { data: byte, amount_of_bits: 8 }
+    }
+
+    fn add(&self, bit: bool) -> Self {
+        if !bit {
+            Self {
+                data: self.data,
+                amount_of_bits: self.amount_of_bits + 1
+            }
+        } else {
+            let mut mask = 0b10000000;
+            for _ in 0..self.amount_of_bits {
+                mask = mask >> 1;
+            }
+            Self {
+                data: mask | self.data,
+                amount_of_bits: self.amount_of_bits + 1
+            }
+        }
+    }
+}
+
+struct BitsWriter<T: Write> {
+    writer: T,
+    mask: u8,
+    shift: u8,
+    current_byte: u8
+}
+
+impl<T: Write> BitsWriter<T> {
+    fn new(writer: T) -> Self {
+        Self {
+            writer,
+            mask: 0b10000000,
+            shift: 0,
+            current_byte: 0b0
+        }
+    }
+
+    fn write(&mut self, bits: &Bits) {
+        for i in 0..bits.amount_of_bits {
+            if self.mask == 0b00000000 {
+                let mut buf = [self.current_byte];
+                self.writer.write(&mut buf).expect("to write");
+                self.current_byte = 0b00000000;
+                self.mask = 0b10000000;
+                self.shift = 0;
+            }
+
+            self.current_byte = (((bits.data << i) >> self.shift) & self.mask) | self.current_byte;
+            self.mask = self.mask >> 1;
+            self.shift += 1;
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.mask != 0b10000000 {
+            let mut buf = [self.current_byte];
+            self.writer.write(&mut buf).expect("to write");
+        }
+    }
+}
+
+struct BitsReader<T: Read> {
+    reader: T,
+    mask: u8,
+    current_byte: u8
+}
+
+impl<T: Read> BitsReader<T> {
+    fn new(reader: T) -> Self {
+        Self {
+            reader,
+            mask: 0b00000000,
+            current_byte: 0b0
+        }
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        // TODO: improve this performance
+        (0..8).fold(0, |acc, _| {
+            acc << 1 | if self.read() { 1 } else { 0 }
+        })
+    }
+
+    fn read(&mut self) -> bool {
+        if self.mask == 0b00000000 {
+            let mut buf = [0u8; 1];
+            self.reader.read(&mut buf).expect("to read");
+            self.current_byte = buf[0];
+            self.mask = 0b10000000;
+        }
+
+        let result = self.current_byte & self.mask == self.mask;
+        self.mask = self.mask >> 1;
+        result
+    }
+
+    fn read_safe(&mut self) -> Option<bool> {
+        if self.mask == 0b00000000 {
+            let mut buf = [0u8; 1];
+            self.reader.read_exact(&mut buf).ok()?;
+            self.current_byte = buf[0];
+            self.mask = 0b10000000;
+        }
+
+        let result = self.current_byte & self.mask == self.mask;
+        self.mask = self.mask >> 1;
+        Some(result)
+    }
+}
+
+fn write_huffman_file(input: &mut (impl Read + ?Sized), output: &mut (impl Write + ?Sized), table: HuffmanPrefixCodeTable, root: HuffmanNode) {
     let mut nodes_to_process: Vec<HuffmanNode> = vec![root];
+    let mut writer = BitsWriter::new(output);
+
     while nodes_to_process.len() > 0 {
         let node = nodes_to_process.pop().unwrap();
 
         if let Some(byte) = node.byte {
-            output.write(&[0b1, byte]).expect("cannot write output");
+            writer.write(&Bits::empty().add(true));
+            writer.write(&Bits::byte(byte));
         } else {
-            output.write(&[0b0]).expect("cannot write output");
-            if let Some(left) = node.left {
-                nodes_to_process.push(*left);
-            }
+            writer.write(&Bits::empty().add(false));
             if let Some(right) = node.right {
                 nodes_to_process.push(*right);
             }
+            if let Some(left) = node.left {
+                nodes_to_process.push(*left);
+            }
         }
     }
 
-    output.write(&input.bytes()
-        .map(|b| *table.0.get(&b.unwrap()).unwrap())
-        .collect::<Vec<u8>>()).expect("done");
+    // TODO: writing only bytes creates a padding of zeroes at the end every time we end up with
+    // bits to write not as a multiple of 8. The only way to solve it is to
+    // find a way to actually write bits into the file and not bytes
+
+    // IDEA: the BitsWriter puts one last byte at the end of the output to indicate
+    // how many bits of padding there are, BitsReader takes in account that and doesn't read
+    // the padding bits. This means that BitsWriter/BitsReader are not generic writer/reader, they only
+    // work when used together
+    for byte in input.bytes() {
+        let byte = byte.unwrap();
+        let prefix_code = table.0.get(&byte).expect("byte not found");
+        writer.write(prefix_code);
+    }
+
+    // IDEA: flush on drop
+    writer.flush();
 }
 
-fn read_huffman_file(options: HuffmanOptions, input: &mut impl Read) {
-    let root = decode_tree(input);
+fn read_huffman_file(input: &mut (impl Read + ?Sized), output: &mut (impl Write + ?Sized)) {
+    let mut reader = BitsReader::new(input);
+    let root = decode_tree(&mut reader);
+    let table = huffman_prefix_code_table(root.clone());
 
-    let mut output = std::fs::File::create(options.output_file).expect("cannot create output file");
-    
-    let current_node: &HuffmanNode;
-    
-    let mut buf = Vec::new();
-    while input.read(&mut buf).expect("cannot read") != 0 {
-        for byte in buf {
-            
+    let mut current_node: &HuffmanNode = &root;
+
+    loop {
+        let bit = reader.read_safe();
+
+        match bit {
+            Some(true) => current_node = &current_node.right.as_ref().unwrap(),
+            Some(false) => current_node = &current_node.left.as_ref().unwrap(),
+            None => break,
+        }
+
+        if current_node.byte.is_some() {
+            output.write(&[current_node.byte.unwrap()]).expect("write byte");
+            current_node = &root;
         }
     }
 }
 
-fn decode_tree(input: &mut impl Read) -> HuffmanNode {
-    let mut buf = vec![0u8; 1];
-    input.read_exact(&mut buf).expect("read byte");
-    
-    if buf[0] == 0b1 {
-        input.read_exact(&mut buf).expect("read byte");
+fn decode_tree<T: Read>(reader: &mut BitsReader<T>) -> HuffmanNode {
+    let bit = reader.read();
+
+    if bit {
         HuffmanNode {
             frequency: 0,
-            byte: Some(buf[0]),
+            byte: Some(reader.read_byte()),
             left: None,
             right: None
         }
     } else {
-        let left = decode_tree(input);
-        let right = decode_tree(input);
+        let left = decode_tree(reader);
+        let right = decode_tree(reader);
         HuffmanNode {
             frequency: 0,
             byte: None,
@@ -102,13 +302,21 @@ fn decode_tree(input: &mut impl Read) -> HuffmanNode {
 
 fn get_options<'a>(args: &[&str]) -> HuffmanOptions<'a> {
     HuffmanOptions {
-        input_file: Some("src/huffman/test.txt"),
-        output_file: "src/huffman/test.txt.huffman",
-        mode: HuffmanMode::Encode
+        input_file: None,
+        output_file: None,
+        mode: if args[0] == "--decode" {
+            HuffmanMode::Decode
+        } else {
+            HuffmanMode::Encode
+        }
     }
 }
 
-struct HuffmanOptions<'a> { input_file: Option<&'a str>, output_file: &'a str, mode: HuffmanMode }
+struct HuffmanOptions<'a> {
+    input_file: Option<&'a str>,
+    output_file: Option<&'a str>,
+    mode: HuffmanMode
+}
 enum HuffmanMode { Encode, Decode }
 
 fn huffman_tree(frequencies: HashMap<u8, usize>) -> HuffmanNode {
@@ -138,7 +346,7 @@ fn huffman_tree(frequencies: HashMap<u8, usize>) -> HuffmanNode {
 
 fn huffman_prefix_code_table(root: HuffmanNode) -> HuffmanPrefixCodeTable {
     let mut prefix_code_table = HashMap::new();
-    let mut nodes_to_process: Vec<(HuffmanNode, u8)> = vec![(root, 0)];
+    let mut nodes_to_process: Vec<(HuffmanNode, Bits)> = vec![(root, Bits::empty())];
     while nodes_to_process.len() > 0 {
         let node_with_prefix = nodes_to_process.pop().unwrap();
 
@@ -146,10 +354,10 @@ fn huffman_prefix_code_table(root: HuffmanNode) -> HuffmanPrefixCodeTable {
             prefix_code_table.insert(byte, node_with_prefix.1);
         } else {
             if let Some(left) = node_with_prefix.0.left {
-                nodes_to_process.push((*left, node_with_prefix.1 * 2));
+                nodes_to_process.push((*left, node_with_prefix.1.add(false)));
             }
             if let Some(right) = node_with_prefix.0.right {
-                nodes_to_process.push((*right, node_with_prefix.1 * 2 + 1));
+                nodes_to_process.push((*right, node_with_prefix.1.add(true)));
             }
         }
     }
@@ -158,7 +366,17 @@ fn huffman_prefix_code_table(root: HuffmanNode) -> HuffmanPrefixCodeTable {
 }
 
 #[derive(Debug)]
-struct HuffmanPrefixCodeTable(HashMap<u8, u8>);
+struct HuffmanPrefixCodeTable(HashMap<u8, Bits>);
+
+impl Display for HuffmanPrefixCodeTable {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut string = String::new();
+        for (b, bits) in &self.0 {
+            string = format!("{}\n{} - {:08b} -> {}", string, *b as char, b, bits);
+        }
+        write!(fmt, "{}", string)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct HuffmanNode {
@@ -188,7 +406,7 @@ impl Ord for HuffmanNode {
     }
 }
 
-fn huffman_frequencies(input: &mut impl Read) -> HashMap<u8, usize> {
+fn huffman_frequencies(input: &mut (impl Read + ?Sized)) -> HashMap<u8, usize> {
     let mut frequencies: HashMap<u8, usize> = HashMap::new();
 
     let mut reader = BufReader::new(input);
@@ -240,12 +458,62 @@ mod tests {
         let root = huffman_tree(frequencies);
         let table = huffman_prefix_code_table(root);
 
-        let t_prefix = table.0[&b't'];
-        let e_prefix = table.0[&b'e'];
-        let s_prefix = table.0[&b's'];
+        let t_prefix = table.0.get(&b't').unwrap();
+        let e_prefix = table.0.get(&b'e').unwrap();
+        let s_prefix = table.0.get(&b's').unwrap();
 
-        assert_eq!(t_prefix, 0b0);
-        assert_eq!(e_prefix, 0b10);
-        assert_eq!(s_prefix, 0b11);
+        assert_eq!(t_prefix.data, 0b0);
+        assert_eq!(e_prefix.data, 0b10000000);
+        assert_eq!(s_prefix.data, 0b11000000);
+    }
+
+    #[test]
+    fn bit_write_and_read() {
+        let mut output = Vec::new();
+
+        let mut bits = Bits::empty();
+        bits = bits.add(true);
+        bits = bits.add(true);
+        bits = bits.add(false);
+        bits = bits.add(true);
+        bits = bits.add(false);
+        bits = bits.add(true);
+        bits = bits.add(false);
+        bits = bits.add(true);
+        // TODO: Bits::add should fail if add more than 8 bits
+        let mut bits2 = Bits::empty();
+        bits2 = bits2.add(false);
+        bits2 = bits2.add(true);
+        let mut writer = BitsWriter::new(&mut output);
+        writer.write(&bits);
+        writer.write(&bits2);
+        writer.flush();
+
+        let mut input: &[u8] = &output;
+        let mut reader = BitsReader::new(input);
+        assert_eq!(reader.read(), true);
+        assert_eq!(reader.read(), true);
+        assert_eq!(reader.read(), false);
+        assert_eq!(reader.read(), true);
+        assert_eq!(reader.read(), false);
+        assert_eq!(reader.read(), true);
+        assert_eq!(reader.read(), false);
+        assert_eq!(reader.read(), true);
+        assert_eq!(reader.read(), false);
+        assert_eq!(reader.read(), true);
+    }
+
+    #[test]
+    fn encode_decode_should_return_original_input() {
+        let mut input: &[u8] = b"tests";
+        let mut output = Vec::new();
+
+        huffman_cli_impl(&["--encode"], &mut input, &mut output);
+
+        let mut input: &[u8] = &output;
+        let mut output = Vec::new();
+        huffman_cli_impl(&["--decode"], &mut input, &mut output);
+
+        assert_eq!(String::from_utf8(output.clone()).expect("to do it"), "tests".to_string());
     }
 }
