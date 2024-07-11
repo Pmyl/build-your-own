@@ -2,7 +2,7 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::io::{BufRead, BufReader, Read, stdin, stdout, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, stdin, stdout, Write};
 
 // https://codingchallenges.fyi/challenges/challenge-huffman
 
@@ -16,7 +16,7 @@ fn huffman_cli_impl(args: &[&str], input: impl Read, output: impl Write) {
     let targets = HuffmanTargets::new(options.input_file, input);
 
     let mut output: Box<dyn Write> = if let Some(file) = options.output_file {
-        Box::new(std::fs::File::create(file).expect("to create a file"))
+        Box::new(BufWriter::new(std::fs::File::create(file).expect("to create a file")))
     } else {
         Box::new(output)
     };
@@ -176,58 +176,6 @@ fn decode_tree<T: Read>(reader: &mut BitsReader<T>) -> HuffmanNode {
     }
 }
 
-// fn decode_tree2<T: Read>(reader: &mut BitsReader<T>) -> HuffmanNode {
-//     let mut nodes = VecDeque::new();
-//     let mut nodes_awaiting_children = 0;
-//
-//     loop {
-//         let bit = reader.read();
-//
-//         let node = if bit {
-//             HuffmanNode {
-//                 frequency: 0,
-//                 byte: Some(reader.read_byte()),
-//                 left: None,
-//                 right: None
-//             }
-//         } else {
-//             nodes_awaiting_children += 1;
-//             HuffmanNode {
-//                 frequency: 0,
-//                 byte: None,
-//                 left: None,
-//                 right: None
-//             }
-//         };
-//
-//         if nodes.is_empty() && node.byte.is_some() {
-//             return node;
-//         }
-//
-//         let last_element = nodes.len() - 1;
-//         let parent: &mut HuffmanNode = nodes.get_mut(last_element).unwrap();
-//         if parent.left.is_none() {
-//             parent.left = Some(Box::new(node));
-//         } else if parent.right.is_none() {
-//             parent.right = Some(Box::new(node));
-//             nodes.pop_back();
-//             nodes_awaiting_children -= 1;
-//         } else {
-//             panic!("lol?");
-//         }
-//
-//         if node.byte.is_none() {
-//             nodes.push_back(node);
-//         }
-//
-//         if nodes_awaiting_children == 0 {
-//             break;
-//         }
-//     }
-//
-//     nodes.pop_front().unwrap()
-// }
-
 struct HuffmanTargets<'a> {
     input: HuffmanTargetsInput<'a>,
 }
@@ -256,7 +204,7 @@ impl<'a> HuffmanTargets<'a> {
     fn input(&'a self) -> Box<dyn Read + 'a> {
         match self.input {
             HuffmanTargetsInput::Content(ref content) => Box::new(content.as_slice()),
-            HuffmanTargetsInput::File(ref file) => Box::new(std::fs::File::open(file).expect("file not found"))
+            HuffmanTargetsInput::File(ref file) => Box::new(BufReader::new(std::fs::File::open(file).expect("file not found")))
         }
     }
 }
@@ -270,7 +218,7 @@ struct Bits {
 impl Display for Bits {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut string = String::new();
-        // TODO: is there another way to do this?
+        // TODO: should this be 1 << 31?
         let mut mask = 0b10000000000000000000000000000000;
         for _ in 0..self.amount_of_bits {
             if self.data & mask == mask {
@@ -304,7 +252,7 @@ impl Bits {
                 amount_of_bits: self.amount_of_bits + 1
             }
         } else {
-            // TODO: is there another way to do this?
+            // TODO: should this be 1 << 31?
             let mut mask = 0b10000000000000000000000000000000;
             mask = mask >> self.amount_of_bits;
             Self {
