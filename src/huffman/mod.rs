@@ -512,9 +512,9 @@ mod tests {
         let e_prefix = table.0.get(&b'e').unwrap();
         let s_prefix = table.0.get(&b's').unwrap();
 
-        assert_eq!(t_prefix.data, 0b0);
-        assert_eq!(e_prefix.data, 0b10000000);
-        assert_eq!(s_prefix.data, 0b11000000);
+        assert_eq!(t_prefix.data, 0b00000000000000000000000000000000);
+        assert_eq!(e_prefix.data, 0b10000000000000000000000000000000);
+        assert_eq!(s_prefix.data, 0b11000000000000000000000000000000);
     }
 
     #[test]
