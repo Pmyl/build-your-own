@@ -11,7 +11,7 @@ fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) {
 
     let result = if let Some(filepath) = cli_options.filepath {
         let file = std::fs::File::open(filepath)
-            .inspect_err(|_| eprintln!("no {} file", filepath))
+//             .inspect_err(|_| eprintln!("no {} file", filepath))
             .expect("file not found");
 
         wc(file)
@@ -112,7 +112,7 @@ pub fn wc(reader: impl Read) -> WcResult {
         buf.clear();
     }
 
-    WcResult { lines, words, characters, bytes }
+    WcResult { lines: usize::max(lines, 1), words, characters, bytes }
 }
 
 #[derive(Default)]
@@ -233,5 +233,21 @@ mod test {
         let input: &[u8] = "some input".as_bytes();
         wc_cli_impl(&["-c"], input, &mut output);
         assert_eq!(output, b"10 \n");
+    }
+
+    #[test]
+    fn wc_dash_l_only_include_newlines_to_adhere_to_posix_line_definition() {
+        let mut output = Vec::new();
+        let input: &[u8] = "new line \n no new line".as_bytes();
+        wc_cli_impl(&["-l"], input, &mut output);
+        assert_eq!(output, b"1 \n");
+    }
+
+    #[test]
+    fn wc_dash_l_can_never_be_zero_lines() {
+        let mut output = Vec::new();
+        let input: &[u8] = "no new line".as_bytes();
+        wc_cli_impl(&["-l"], input, &mut output);
+        assert_eq!(output, b"1 \n");
     }
 }
