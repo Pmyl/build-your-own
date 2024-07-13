@@ -11,7 +11,7 @@ fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) {
 
     let result = if let Some(filepath) = cli_options.filepath {
         let file = std::fs::File::open(filepath)
-//             .inspect_err(|_| eprintln!("no {} file", filepath))
+            .inspect_err(|_| eprintln!("no {} file", filepath))
             .expect("file not found");
 
         wc(file)
