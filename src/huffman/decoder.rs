@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use super::bits::{BitsReader};
 use super::targets::{HuffmanTargets};
 
-pub fn decode<'a>(targets: HuffmanTargets<'a>) {
+pub fn decode(targets: HuffmanTargets) {
     let (input, output) = targets.take();
     let mut output = output.take();
 

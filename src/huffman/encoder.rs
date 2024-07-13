@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use super::bits::{Bits, BitsWriter};
 use super::targets::{HuffmanTargets};
 
-pub fn encode<'a>(targets: HuffmanTargets<'a>) {
+pub fn encode(targets: HuffmanTargets) {
     let (input, output) = targets.take();
 
     let frequencies = huffman_frequencies(&mut input.take());
@@ -16,7 +16,7 @@ pub fn encode<'a>(targets: HuffmanTargets<'a>) {
     write_huffman_file(&mut input.take(), &mut output.take(), table, root);
 }
 
-fn huffman_frequencies(input: &mut (impl Read + ?Sized)) -> [usize; 256] {
+fn huffman_frequencies(input: &mut impl Read) -> [usize; 256] {
     let mut frequencies: [usize; 256] = [0; 256];
 
     let mut reader = BufReader::new(input);
@@ -84,8 +84,8 @@ fn huffman_prefix_code_table(root: HuffmanNode) -> HuffmanPrefixCodeTable {
 }
 
 fn write_huffman_file(
-    input: &mut (impl Read + ?Sized),
-    output: &mut (impl Write + ?Sized),
+    input: &mut impl Read,
+    output: &mut impl Write,
     table: HuffmanPrefixCodeTable,
     root: HuffmanNode,
 ) {
