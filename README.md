@@ -2,9 +2,9 @@
 Project to learn by building my own version of existing tools/software.
 
 ## How to run
-Use `myown-update` to build all tools in release. \
-Use `myown tool_name args` to use my own tools. (e.g. `echo "hello" | myown wc -c`) \
-Check `myown-update` and `myown` functions in `fish/functions` folder. 
+Two aliases in `fish/functions` were created to use it:
+`myown-update` to build all tools in release. \
+`myown tool_name args` to use my own tools. (e.g. `echo "hello" | myown wc -c`) \
 
 ## How to benchmark
 Using `time` and `for` we can get an idea of the performances, for example: \
