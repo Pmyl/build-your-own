@@ -1,12 +1,13 @@
 use std::io::{Read, Write};
+use std::error::Error;
 use super::bits::{BitsReader};
 use super::targets::{HuffmanTargets};
 
-pub fn decode(targets: HuffmanTargets) {
+pub fn decode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
     let (input, output) = targets.take();
     let mut output = output.take();
 
-    let mut reader = BitsReader::new(input.take());
+    let mut reader = BitsReader::new(input.take())?;
     let root = decode_tree(&mut reader);
 
     let mut current_node: &HuffmanNode = &root;
@@ -21,12 +22,12 @@ pub fn decode(targets: HuffmanTargets) {
         }
 
         if current_node.byte.is_some() {
-            output
-                .write(&[current_node.byte.unwrap()])
-                .expect("write byte");
+            output.write(&[current_node.byte.unwrap()])?;
             current_node = &root;
         }
     }
+
+    Ok(())
 }
 
 fn decode_tree<T: Read>(reader: &mut BitsReader<T>) -> HuffmanNode {

@@ -1,31 +1,31 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::fmt::Display;
+use std::error::Error;
 use std::fmt::Formatter;
 use std::io::{BufRead, BufReader, Read, Write};
 use super::bits::{Bits, BitsWriter};
 use super::targets::{HuffmanTargets};
 
-pub fn encode(targets: HuffmanTargets) {
+pub fn encode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
     let (input, output) = targets.take();
 
-    let frequencies = huffman_frequencies(&mut input.take());
+    let frequencies = huffman_frequencies(&mut input.take())?;
     let root = huffman_tree(frequencies);
     let table = huffman_prefix_code_table(root.clone());
 
-    write_huffman_file(&mut input.take(), &mut output.take(), table, root);
+    write_huffman_file(&mut input.take(), &mut output.take(), table, root)?;
+
+    Ok(())
 }
 
-fn huffman_frequencies(input: &mut impl Read) -> [usize; 256] {
+fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], Box<dyn Error>> {
     let mut frequencies: [usize; 256] = [0; 256];
 
     let mut reader = BufReader::new(input);
     let mut buf = Vec::<u8>::new();
 
-    while reader
-        .read_until(b'\n', &mut buf)
-        .expect("read_until failed")
-        != 0
+    while reader.read_until(b'\n', &mut buf)? != 0
     {
         for byte in buf.into_iter() {
             frequencies[byte as usize] = frequencies[byte as usize] + 1;
@@ -34,7 +34,7 @@ fn huffman_frequencies(input: &mut impl Read) -> [usize; 256] {
         buf = Vec::new();
     }
 
-    frequencies
+    Ok(frequencies)
 }
 
 fn huffman_tree(frequencies: [usize; 256]) -> HuffmanNode {
@@ -88,7 +88,7 @@ fn write_huffman_file(
     output: &mut impl Write,
     table: HuffmanPrefixCodeTable,
     root: HuffmanNode,
-) {
+) -> Result<(), Box<dyn Error>> {
     let mut nodes_to_process: Vec<HuffmanNode> = vec![root];
     let mut writer = BitsWriter::new(output);
 
@@ -96,10 +96,10 @@ fn write_huffman_file(
         let node = nodes_to_process.pop().unwrap();
 
         if let Some(byte) = node.byte {
-            writer.write(&Bits::empty().add(true));
-            writer.write(&Bits::byte(byte));
+            writer.write(&Bits::empty().add(true))?;
+            writer.write(&Bits::byte(byte))?;
         } else {
-            writer.write(&Bits::empty().add(false));
+            writer.write(&Bits::empty().add(false))?;
             if let Some(right) = node.right {
                 nodes_to_process.push(*right);
             }
@@ -112,8 +112,10 @@ fn write_huffman_file(
     for byte in input.bytes() {
         let byte = byte.unwrap();
         let prefix_code = table.get(&byte);
-        writer.write(prefix_code);
+        writer.write(prefix_code)?;
     }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -174,7 +176,7 @@ mod tests {
     fn find_frequencies() {
         let mut input: &[u8] = b"test";
 
-        let frequencies = huffman_frequencies(&mut input);
+        let frequencies = huffman_frequencies(&mut input).unwrap();
 
         assert_eq!(frequencies[b't' as usize], 2);
         assert_eq!(frequencies[b'e' as usize], 1);
@@ -183,9 +185,9 @@ mod tests {
 
     #[test]
     fn find_frequencies_test_file() {
-        let mut test_file = std::fs::File::open("src/huffman/test.txt").expect("file not found");
+        let mut test_file = std::fs::File::open("src/huffman/test.txt").unwrap();
 
-        let frequencies = huffman_frequencies(&mut test_file);
+        let frequencies = huffman_frequencies(&mut test_file).unwrap();
 
         assert_eq!(frequencies[b'X' as usize], 333);
         assert_eq!(frequencies[b't' as usize], 223000);
@@ -195,7 +197,7 @@ mod tests {
     fn frequencies_to_tree_to_prefix_code_table() {
         let mut input: &[u8] = b"testts";
 
-        let frequencies = huffman_frequencies(&mut input);
+        let frequencies = huffman_frequencies(&mut input).unwrap();
         let root = huffman_tree(frequencies);
         let table = huffman_prefix_code_table(root);
 

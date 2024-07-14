@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{Read, Write};
+use std::error::Error;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Bits {
@@ -77,10 +78,10 @@ impl<T: Write> BitsWriter<T> {
         }
     }
 
-    pub fn write(&mut self, bits: &Bits) {
+    pub fn write(&mut self, bits: &Bits) -> Result<(), Box<dyn Error>> {
         for i in 0..bits.amount_of_bits {
             if self.mask == 0b00000000 {
-                self.flush();
+                self.flush()?;
             }
 
             self.current_byte =
@@ -88,28 +89,34 @@ impl<T: Write> BitsWriter<T> {
             self.mask = self.mask >> 1;
             self.shift += 1;
         }
+
+        Ok(())
     }
 
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
         let mut buf = [self.current_byte];
-        self.writer.write(&mut buf).expect("to write");
+        self.writer.write(&mut buf)?;
         self.current_byte = 0b00000000;
         self.mask = 0b10000000;
         self.shift = 0;
+
+        Ok(())
     }
 
-    pub fn final_flush_with_offset(&mut self) {
+    pub fn final_flush_with_offset(&mut self) -> Result<(), Box<dyn Error>> {
         let mut buf = [self.mask];
         if self.mask != 0b10000000 {
-            self.flush();
+            self.flush()?;
         }
-        self.writer.write(&mut buf).expect("to write");
+        self.writer.write(&mut buf)?;
+
+        Ok(())
     }
 }
 
 impl<T: Write> Drop for BitsWriter<T> {
     fn drop(&mut self) {
-        self.final_flush_with_offset();
+        self.final_flush_with_offset().expect("final flush failed");
     }
 }
 
@@ -122,25 +129,25 @@ pub struct BitsReader<T: Read> {
 }
 
 impl<T: Read> BitsReader<T> {
-    pub fn new(mut reader: T) -> Self {
+    pub fn new(mut reader: T) -> Result<Self, Box<dyn Error>> {
         let mut buf = [0u8; 1];
         reader
             .read_exact(&mut buf)
-            .expect("to have at least two bytes");
+            .map_err(|_| "compressed input should have at least two bytes")?;
         let current_byte = buf[0];
         reader
             .read_exact(&mut buf)
-            .expect("to have at least two bytes");
+            .map_err(|_| "compressed input should have at least two bytes")?;
         let next_byte = buf[0];
         let next_next_byte = reader.read_exact(&mut buf).ok().map(|_| buf[0]);
 
-        Self {
+        Ok(Self {
             reader,
             mask: 0b10000000,
             current_byte,
             next_byte,
             next_next_byte,
-        }
+        })
     }
 
     pub fn read_byte(&mut self) -> u8 {
@@ -175,9 +182,7 @@ impl<T: Read> BitsReader<T> {
 
         if self.mask == 0b00000000 {
             self.current_byte = self.next_byte;
-            self.next_byte = self
-                .next_next_byte
-                .expect("not to call read after end of file");
+            self.next_byte = self.next_next_byte.unwrap();
             let mut buf = [0u8; 1];
             self.next_next_byte = self.reader.read_exact(&mut buf).ok().map(|_| buf[0]);
             self.mask = 0b10000000;
@@ -210,12 +215,12 @@ mod tests {
         bits2 = bits2.add(false);
         bits2 = bits2.add(true);
         let mut writer = BitsWriter::new(&mut output);
-        writer.write(&bits);
-        writer.write(&bits2);
+        writer.write(&bits).unwrap();
+        writer.write(&bits2).unwrap();
         drop(writer);
 
         let input: &[u8] = &output;
-        let mut reader = BitsReader::new(input);
+        let mut reader = BitsReader::new(input).unwrap();
         assert_eq!(reader.read(), true);
         assert_eq!(reader.read(), true);
         assert_eq!(reader.read(), false);

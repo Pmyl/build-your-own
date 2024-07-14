@@ -1,4 +1,5 @@
 use std::io::{stdin, stdout, Read, Write};
+use std::error::Error;
 
 mod bits;
 mod encoder;
@@ -8,17 +9,17 @@ mod targets;
 // https://codingchallenges.fyi/challenges/challenge-huffman
 
 pub fn huffman_cli(args: &[&str]) {
-    huffman_cli_impl(args, stdin(), stdout());
+    huffman_cli_impl(args, stdin(), stdout()).expect("to work")
 }
 
-fn huffman_cli_impl<'a>(args: &[&str], input: impl Read, output: impl Write) {
+fn huffman_cli_impl<'a>(args: &[&str], input: impl Read, output: impl Write) -> Result<(), Box<dyn Error>> {
     let options = HuffmanOptions::from_args(args);
     let targets = targets::HuffmanTargets::new(options.input_file, input, options.output_file, output);
 
     if let HuffmanMode::Encode = options.mode {
-        encoder::encode(targets);
+        encoder::encode(targets)
     } else {
-        decoder::decode(targets);
+        decoder::decode(targets)
     }
 }
 
@@ -77,8 +78,6 @@ enum HuffmanMode {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use super::*;
 
     #[test]
@@ -87,12 +86,12 @@ mod tests {
         let original_length = input.len();
         let mut output = Vec::new();
 
-        huffman_cli_impl(&["--encode"], &mut input, &mut output);
+        huffman_cli_impl(&["--encode"], &mut input, &mut output).expect("to work");
 
         let mut input: &[u8] = &output;
         let new_length = input.len();
         let mut output = Vec::new();
-        huffman_cli_impl(&["--decode"], &mut input, &mut output);
+        huffman_cli_impl(&["--decode"], &mut input, &mut output).expect("to work");
 
         assert!(original_length < new_length);
         assert_eq!(
@@ -103,7 +102,6 @@ mod tests {
 
     #[test]
     fn encode_decode_file_should_return_original_input() {
-        env::set_var("RUST_BACKTRACE", "1");
         huffman_cli_impl(
             &[
                 "--encode",
@@ -114,7 +112,7 @@ mod tests {
             ],
             stdin(),
             stdout(),
-        );
+        ).expect("to work");
         huffman_cli_impl(
             &[
                 "--decode",
@@ -125,7 +123,7 @@ mod tests {
             ],
             stdin(),
             stdout(),
-        );
+        ).expect("to work");
 
         let mut initial_file =
             std::fs::File::open("src/huffman/small_test.txt").expect("file not found");
