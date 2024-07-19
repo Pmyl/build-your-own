@@ -1,11 +1,11 @@
+use super::bits::{Bits, BitsWriter};
+use super::targets::HuffmanTargets;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-use std::fmt::Display;
 use std::error::Error;
+use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{BufRead, BufReader, Read, Write};
-use super::bits::{Bits, BitsWriter};
-use super::targets::{HuffmanTargets};
 
 pub fn encode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
     let (input, output) = targets.take();
@@ -25,8 +25,7 @@ fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], Box<dyn Er
     let mut reader = BufReader::new(input);
     let mut buf = Vec::<u8>::new();
 
-    while reader.read_until(b'\n', &mut buf)? != 0
-    {
+    while reader.read_until(b'\n', &mut buf)? != 0 {
         for byte in buf.into_iter() {
             frequencies[byte as usize] = frequencies[byte as usize] + 1;
         }
@@ -157,14 +156,11 @@ impl HuffmanPrefixCodeTable {
 
 impl Display for HuffmanPrefixCodeTable {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        let mut string = String::new();
         for (b, bits) in self.0.iter().enumerate() {
-            string = format!(
-                "{}\n{} - {:08b} -> {}",
-                string, b as u8 as char, b as u8, bits
-            );
+            write!(fmt, "\n{} - {:08b} -> {}", b as u8 as char, b as u8, bits)?;
         }
-        write!(fmt, "{}", string)
+
+        Ok(())
     }
 }
 

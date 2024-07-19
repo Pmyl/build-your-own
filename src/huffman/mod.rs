@@ -1,9 +1,9 @@
-use std::io::{stdin, stdout, Read, Write};
 use std::error::Error;
+use std::io::{stdin, stdout, Read, Write};
 
 mod bits;
-mod encoder;
 mod decoder;
+mod encoder;
 mod targets;
 
 // https://codingchallenges.fyi/challenges/challenge-huffman
@@ -12,9 +12,14 @@ pub fn huffman_cli(args: &[&str]) {
     huffman_cli_impl(args, stdin(), stdout()).expect("to work")
 }
 
-fn huffman_cli_impl<'a>(args: &[&str], input: impl Read, output: impl Write) -> Result<(), Box<dyn Error>> {
+fn huffman_cli_impl<'a>(
+    args: &[&str],
+    input: impl Read,
+    output: impl Write,
+) -> Result<(), Box<dyn Error>> {
     let options = HuffmanOptions::from_args(args);
-    let targets = targets::HuffmanTargets::new(options.input_file, input, options.output_file, output);
+    let targets =
+        targets::HuffmanTargets::new(options.input_file, input, options.output_file, output);
 
     if let HuffmanMode::Encode = options.mode {
         encoder::encode(targets)
@@ -112,7 +117,8 @@ mod tests {
             ],
             stdin(),
             stdout(),
-        ).expect("to work");
+        )
+        .expect("to work");
         huffman_cli_impl(
             &[
                 "--decode",
@@ -123,7 +129,8 @@ mod tests {
             ],
             stdin(),
             stdout(),
-        ).expect("to work");
+        )
+        .expect("to work");
 
         let mut initial_file =
             std::fs::File::open("src/huffman/small_test.txt").expect("file not found");
@@ -142,6 +149,9 @@ mod tests {
 
         let initial = String::from_utf8(initial_content).expect("to do it");
         let result = String::from_utf8(result_content).expect("to do it");
+
+        std::fs::remove_file("src/huffman/small_test.huffman").expect("to work");
+        std::fs::remove_file("src/huffman/small_test_result.txt").expect("to work");
 
         assert_eq!(result, initial);
     }

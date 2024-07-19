@@ -1,7 +1,7 @@
-use std::io::{Read, Write};
+use super::bits::BitsReader;
+use super::targets::HuffmanTargets;
 use std::error::Error;
-use super::bits::{BitsReader};
-use super::targets::{HuffmanTargets};
+use std::io::{Read, Write};
 
 pub fn decode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
     let (input, output) = targets.take();

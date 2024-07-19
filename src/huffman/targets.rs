@@ -1,4 +1,4 @@
-use std::io::{BufReader, Read, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 
 pub struct HuffmanTargets<'a> {
     input: HuffmanInput<'a>,
@@ -20,7 +20,7 @@ impl<'a> HuffmanOutput<'a> {
         match self {
             HuffmanOutput::Buffer(buffer) => buffer,
             HuffmanOutput::File(ref file) => Box::new(BufWriter::new(
-                std::fs::File::open(file).expect("file not found"),
+                std::fs::File::create(file).expect("file not found"),
             )),
         }
     }
@@ -38,7 +38,12 @@ impl<'a> HuffmanInput<'a> {
 }
 
 impl<'a> HuffmanTargets<'a> {
-    pub fn new(input_file: Option<&'a str>, input: impl Read, output_file: Option<&'a str>, output: impl Write + 'a) -> Self {
+    pub fn new(
+        input_file: Option<&'a str>,
+        input: impl Read,
+        output_file: Option<&'a str>,
+        output: impl Write + 'a,
+    ) -> Self {
         let input = if let Some(file) = input_file {
             HuffmanInput::File(file)
         } else {
