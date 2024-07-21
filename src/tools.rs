@@ -48,10 +48,14 @@ macro_rules! tools {
             let tool = Tool::from_str(args.get(0).map(|s| *s));
 
             match tool {
-                Some(tool) => match tool {
+                Some(tool) => match (match tool {
                     $(
                         Tool::$variant => $function(&args.iter().skip(1).map(|s| &**s).collect::<Vec<&str>>()),
                     )+
+                }) {
+                    Err(MyOwnError::ActualError(e)) => panic!("{}", e),
+                    Err(MyOwnError::ActualErrorWithDescription(e, description)) => panic!("{}: {}", description, e),
+                    _ => (),
                 },
                 None => Tool::list(),
             }

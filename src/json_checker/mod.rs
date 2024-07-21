@@ -1,12 +1,14 @@
 use std::cell::RefCell;
-use std::io::{Read, stdin};
+use std::io::{stdin, Read};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+use crate::__::MyOwnError;
+
 // https://codingchallenges.fyi/challenges/challenge-json-checker
 
-pub fn json_checker_cli(_: &[&str]) {
-    let result = json_checker_cli_impl(stdin());
+pub fn json_checker_cli(_: &[&str]) -> Result<(), MyOwnError> {
+    let result = json_checker_cli_impl(stdin())?;
 
     if let JsonCheckerResult::Pass = result {
         std::process::exit(0);
@@ -15,9 +17,9 @@ pub fn json_checker_cli(_: &[&str]) {
     }
 }
 
-fn json_checker_cli_impl(mut reader: impl Read) -> JsonCheckerResult {
+fn json_checker_cli_impl(mut reader: impl Read) -> Result<JsonCheckerResult, MyOwnError> {
     let mut json = String::new();
-    reader.read_to_string(&mut json).expect("should read");
+    reader.read_to_string(&mut json)?;
 
     let mut tokens = Vec::new();
     let mut in_string = false;
@@ -77,11 +79,11 @@ fn json_checker_cli_impl(mut reader: impl Read) -> JsonCheckerResult {
         }
     }
 
-    if let None = parse(tokens) {
+    Ok(if let None = parse(tokens) {
         JsonCheckerResult::Fail
     } else {
         JsonCheckerResult::Pass
-    }
+    })
 }
 
 // json <- object | array | literal
@@ -213,8 +215,8 @@ fn match_literal(tokens: &mut RefCell<Peekable<IntoIter<Token>>>) -> Option<bool
     if let Token::Identifier(identifier) = token {
         return match identifier.as_str() {
             "true" | "false" | "null" => Some(true),
-            _ => Some(false)
-        }
+            _ => Some(false),
+        };
     }
 
     let (Token::Number | Token::String) = token else {
@@ -240,7 +242,7 @@ enum Token {
 
 enum JsonCheckerResult {
     Pass,
-    Fail
+    Fail,
 }
 
 #[cfg(test)]
@@ -251,8 +253,16 @@ mod tests {
         ($name:ident, $result:ident) => {
             #[test]
             fn $name() {
-                let file = std::fs::File::open(concat!("src/json_checker/tests/", stringify!($name), ".json")).expect("file to exists");
-                assert!(matches!(json_checker_cli_impl(file), JsonCheckerResult::$result));
+                let file = std::fs::File::open(concat!(
+                    "src/json_checker/tests/",
+                    stringify!($name),
+                    ".json"
+                ))
+                .expect("file to exists");
+                assert!(matches!(
+                    json_checker_cli_impl(file).expect("to not fail"),
+                    JsonCheckerResult::$result
+                ));
             }
         };
     }

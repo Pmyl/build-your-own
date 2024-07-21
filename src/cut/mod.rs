@@ -1,22 +1,22 @@
 use std::{
-    error::Error,
     io::{stdin, stdout, BufRead, BufReader, Read, Write},
     num::ParseIntError,
 };
 
+use crate::__::{DescribableError, MyOwnError};
+
 // https://codingchallenges.fyi/challenges/challenge-cut
 
-pub fn cut_cli(args: &[&str]) {
-    cut_cli_impl(args, stdin(), stdout()).expect("to work")
+pub fn cut_cli(args: &[&str]) -> Result<(), MyOwnError> {
+    cut_cli_impl(args, stdin(), stdout())
 }
 
-fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(), Box<dyn Error>> {
-    let options = CutCliOptions::from_args(args);
+fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(), MyOwnError> {
+    let options = CutCliOptions::from_args(args)?;
 
     if let Some(input_file) = options.input_file {
-        let file = std::fs::File::open(input_file)
-            .inspect_err(|_| eprintln!("no {} file", input_file))
-            .expect("file not found");
+        let file =
+            std::fs::File::open(input_file).inspect_err(|_| eprintln!("no {} file", input_file))?;
 
         cut(options.options, file, output)
     } else {
@@ -24,23 +24,16 @@ fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(
     }
 }
 
-fn cut(
-    options: CutOptions,
-    input: impl Read,
-    mut output: impl Write,
-) -> Result<(), Box<dyn Error>> {
+fn cut(options: CutOptions, input: impl Read, mut output: impl Write) -> Result<(), MyOwnError> {
     let mut reader = BufReader::new(input);
     let mut buf = Vec::new();
 
     while reader.read_until(b'\n', &mut buf)? != 0 {
-        let line = String::from_utf8(buf)
-            .expect("from_utf8 failed")
-            .trim_end()
-            .to_string();
+        let line = String::from_utf8(buf)?.trim_end().to_string();
         if let Some(ref fields) = options.fields {
             let all_fields: Vec<&str> = line.split(options.delimiter).collect();
 
-            let result = write!(
+            write!(
                 output,
                 "{}",
                 fields
@@ -48,23 +41,10 @@ fn cut(
                     .map(|f| all_fields.get(f - 1).map(|s| *s).unwrap_or(""))
                     .collect::<Vec<&str>>()
                     .join(options.delimiter.to_string().as_str())
-            );
-
-            if let Err(err) = result {
-                if err.kind() == std::io::ErrorKind::BrokenPipe {
-                    return Ok(());
-                }
-                return Err(err.into());
-            }
+            )?;
         }
 
-        let result = writeln!(output);
-        if let Err(err) = result {
-            if err.kind() == std::io::ErrorKind::BrokenPipe {
-                return Ok(());
-            }
-            return Err(err.into());
-        }
+        writeln!(output)?;
         buf = line.into_bytes();
         buf.clear();
     }
@@ -82,7 +62,7 @@ struct CutOptions {
 }
 
 impl<'a> CutCliOptions<'a> {
-    fn from_args(args: &[&'a str]) -> Self {
+    fn from_args(args: &[&'a str]) -> Result<Self, MyOwnError> {
         let mut input_file = None;
         let mut fields = None;
         let mut delimiter = '\t';
@@ -97,7 +77,7 @@ impl<'a> CutCliOptions<'a> {
             if arg.starts_with("-f") {
                 let fields_arg = if arg == "-f" {
                     args.next()
-                        .expect("-f to have numbers after e.g. -f 1 # -f 1,2 # -f \"1 2\"")
+                        .ok_or_else(|| "-f to have numbers after e.g. -f 1 # -f 1,2 # -f \"1 2\"")?
                 } else {
                     arg.trim_start_matches("-f")
                 };
@@ -107,7 +87,7 @@ impl<'a> CutCliOptions<'a> {
                         .split(&[',', ' '])
                         .map(|f| f.trim().parse())
                         .collect::<Result<Vec<usize>, ParseIntError>>()
-                        .expect("-f to have numbers e.g. -f1 # -f1,2 # -f 1"),
+                        .describe_error("-f to have numbers e.g. -f1 # -f1,2 # -f 1 | {}")?,
                 );
                 continue;
             }
@@ -115,12 +95,14 @@ impl<'a> CutCliOptions<'a> {
             if arg.starts_with("-d") {
                 let provided_delimiter = if arg == "-d" {
                     args.next()
-                        .expect("delimiter must be a single character e.g. -d ,")
+                        .ok_or_else(|| "delimiter must be a single character e.g. -d ,")?
                 } else {
                     arg.trim_start_matches("-d")
                 };
                 if provided_delimiter.len() != 1 {
-                    panic!("delimiter must be a single character e.g. -d,");
+                    return Err(MyOwnError::ActualError(
+                        "delimiter must be a single character e.g. -d,".into(),
+                    ));
                 }
                 delimiter = provided_delimiter.chars().next().unwrap();
                 continue;
@@ -133,10 +115,10 @@ impl<'a> CutCliOptions<'a> {
             input_file = Some(arg);
         }
 
-        Self {
+        Ok(Self {
             input_file,
             options: CutOptions { fields, delimiter },
-        }
+        })
     }
 }
 

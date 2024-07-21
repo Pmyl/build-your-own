@@ -1,5 +1,7 @@
+use crate::__::MyOwnError;
 use std::env;
 
+mod __;
 mod cut;
 mod huffman;
 mod json_checker;

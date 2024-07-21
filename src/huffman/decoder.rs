@@ -1,9 +1,10 @@
+use crate::__::MyOwnError;
+
 use super::bits::BitsReader;
 use super::targets::HuffmanInput;
-use std::error::Error;
 use std::io::{Read, Write};
 
-pub fn decode(input: HuffmanInput, output: &mut impl Write) -> Result<(), Box<dyn Error>> {
+pub fn decode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnError> {
     let mut reader = BitsReader::new(input.take())?;
     let root = decode_tree(&mut reader);
 

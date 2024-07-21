@@ -1,7 +1,8 @@
-use std::error::Error;
 use std::io::{stdin, stdout, Read, Write};
 
 use targets::HuffmanInput;
+
+use crate::__::MyOwnError;
 
 mod bits;
 mod decoder;
@@ -10,15 +11,15 @@ mod targets;
 
 // https://codingchallenges.fyi/challenges/challenge-huffman
 
-pub fn huffman_cli(args: &[&str]) {
-    huffman_cli_impl(args, stdin(), stdout()).expect("to work")
+pub fn huffman_cli(args: &[&str]) -> Result<(), MyOwnError> {
+    huffman_cli_impl(args, stdin(), stdout())
 }
 
 fn huffman_cli_impl<'a>(
     args: &[&str],
     input: impl Read,
     mut output: impl Write,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), MyOwnError> {
     let options = HuffmanOptions::from_args(args);
     let input = HuffmanInput::new(options.input_file, input);
 

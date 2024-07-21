@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{Read, Write};
-use std::error::Error;
+
+use crate::__::MyOwnError;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Bits {
@@ -78,7 +79,7 @@ impl<T: Write> BitsWriter<T> {
         }
     }
 
-    pub fn write(&mut self, bits: &Bits) -> Result<(), Box<dyn Error>> {
+    pub fn write(&mut self, bits: &Bits) -> Result<(), MyOwnError> {
         for i in 0..bits.amount_of_bits {
             if self.mask == 0b00000000 {
                 self.flush()?;
@@ -93,7 +94,7 @@ impl<T: Write> BitsWriter<T> {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn flush(&mut self) -> Result<(), MyOwnError> {
         let mut buf = [self.current_byte];
         self.writer.write(&mut buf)?;
         self.current_byte = 0b00000000;
@@ -103,7 +104,7 @@ impl<T: Write> BitsWriter<T> {
         Ok(())
     }
 
-    pub fn final_flush_with_offset(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn final_flush_with_offset(&mut self) -> Result<(), MyOwnError> {
         let mut buf = [self.mask];
         if self.mask != 0b10000000 {
             self.flush()?;
@@ -129,7 +130,7 @@ pub struct BitsReader<T: Read> {
 }
 
 impl<T: Read> BitsReader<T> {
-    pub fn new(mut reader: T) -> Result<Self, Box<dyn Error>> {
+    pub fn new(mut reader: T) -> Result<Self, MyOwnError> {
         let mut buf = [0u8; 1];
         reader
             .read_exact(&mut buf)
