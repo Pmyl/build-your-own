@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::io::{stdin, stdout, Read, Write};
 
+use targets::HuffmanInput;
+
 mod bits;
 mod decoder;
 mod encoder;
@@ -15,22 +17,20 @@ pub fn huffman_cli(args: &[&str]) {
 fn huffman_cli_impl<'a>(
     args: &[&str],
     input: impl Read,
-    output: impl Write,
+    mut output: impl Write,
 ) -> Result<(), Box<dyn Error>> {
     let options = HuffmanOptions::from_args(args);
-    let targets =
-        targets::HuffmanTargets::new(options.input_file, input, options.output_file, output);
+    let input = HuffmanInput::new(options.input_file, input);
 
     if let HuffmanMode::Encode = options.mode {
-        encoder::encode(targets)
+        encoder::encode(input, &mut output)
     } else {
-        decoder::decode(targets)
+        decoder::decode(input, &mut output)
     }
 }
 
 struct HuffmanOptions<'a> {
     input_file: Option<&'a str>,
-    output_file: Option<&'a str>,
     mode: HuffmanMode,
 }
 
@@ -38,7 +38,6 @@ impl<'a> HuffmanOptions<'a> {
     fn from_args(args: &[&'a str]) -> Self {
         let mut mode = HuffmanMode::Encode;
         let mut input_file = None;
-        let mut output_file = None;
 
         let mut args = args.iter();
         loop {
@@ -57,22 +56,10 @@ impl<'a> HuffmanOptions<'a> {
                 continue;
             }
 
-            if arg == "--input" {
-                input_file = args.next().map(|s| *s);
-                continue;
-            }
-
-            if arg == "--output" {
-                output_file = args.next().map(|s| *s);
-                continue;
-            }
+            input_file = Some(arg);
         }
 
-        Self {
-            input_file,
-            output_file,
-            mode,
-        }
+        Self { input_file, mode }
     }
 }
 
@@ -107,51 +94,27 @@ mod tests {
 
     #[test]
     fn encode_decode_file_should_return_original_input() {
+        let mut output = Vec::new();
         huffman_cli_impl(
-            &[
-                "--encode",
-                "--input",
-                "src/huffman/small_test.txt",
-                "--output",
-                "src/huffman/small_test.huffman",
-            ],
+            &["--encode", "src/huffman/small_test.txt"],
             stdin(),
-            stdout(),
-        )
-        .expect("to work");
-        huffman_cli_impl(
-            &[
-                "--decode",
-                "--input",
-                "src/huffman/small_test.huffman",
-                "--output",
-                "src/huffman/small_test_result.txt",
-            ],
-            stdin(),
-            stdout(),
+            &mut output,
         )
         .expect("to work");
 
+        let mut result_content = Vec::new();
+        huffman_cli_impl(&["--decode"], output.as_slice(), &mut result_content).expect("to work");
+
         let mut initial_file =
             std::fs::File::open("src/huffman/small_test.txt").expect("file not found");
-        let mut result_file =
-            std::fs::File::open("src/huffman/small_test_result.txt").expect("file not found");
 
         let mut initial_content = Vec::new();
         initial_file
             .read_to_end(&mut initial_content)
             .expect("to work");
 
-        let mut result_content = Vec::new();
-        result_file
-            .read_to_end(&mut result_content)
-            .expect("to work");
-
         let initial = String::from_utf8(initial_content).expect("to do it");
         let result = String::from_utf8(result_content).expect("to do it");
-
-        std::fs::remove_file("src/huffman/small_test.huffman").expect("to work");
-        std::fs::remove_file("src/huffman/small_test_result.txt").expect("to work");
 
         assert_eq!(result, initial);
     }

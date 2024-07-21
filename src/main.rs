@@ -22,7 +22,7 @@ tools! {
         JsonChecker,
         #[tool(
             command = "huffman",
-            description = "myown huffman [--input file] [--output file] [--encode] [--decode]",
+            description = "myown huffman [--encode] [--decode] [file]",
             function = huffman::huffman_cli
         )]
         Huffman,

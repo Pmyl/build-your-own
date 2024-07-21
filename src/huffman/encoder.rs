@@ -1,5 +1,5 @@
 use super::bits::{Bits, BitsWriter};
-use super::targets::HuffmanTargets;
+use super::targets::HuffmanInput;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::error::Error;
@@ -7,14 +7,12 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{BufRead, BufReader, Read, Write};
 
-pub fn encode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
-    let (input, output) = targets.take();
-
+pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), Box<dyn Error>> {
     let frequencies = huffman_frequencies(&mut input.take())?;
     let root = huffman_tree(frequencies);
     let table = huffman_prefix_code_table(root.clone());
 
-    write_huffman_file(&mut input.take(), &mut output.take(), table, root)?;
+    write_huffman_file(&mut input.take(), output, table, root)?;
 
     Ok(())
 }

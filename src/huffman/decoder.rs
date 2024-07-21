@@ -1,12 +1,9 @@
 use super::bits::BitsReader;
-use super::targets::HuffmanTargets;
+use super::targets::HuffmanInput;
 use std::error::Error;
 use std::io::{Read, Write};
 
-pub fn decode(targets: HuffmanTargets) -> Result<(), Box<dyn Error>> {
-    let (input, output) = targets.take();
-    let mut output = output.take();
-
+pub fn decode(input: HuffmanInput, output: &mut impl Write) -> Result<(), Box<dyn Error>> {
     let mut reader = BitsReader::new(input.take())?;
     let root = decode_tree(&mut reader);
 
