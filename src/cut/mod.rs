@@ -95,18 +95,30 @@ impl<'a> CutCliOptions<'a> {
             };
 
             if arg.starts_with("-f") {
-                fields = Some(
+                let fields_arg = if arg == "-f" {
+                    args.next()
+                        .expect("-f to have numbers after e.g. -f 1 # -f 1,2 # -f \"1 2\"")
+                } else {
                     arg.trim_start_matches("-f")
-                        .split(&[','])
-                        .map(|f| f.parse())
+                };
+
+                fields = Some(
+                    fields_arg
+                        .split(&[',', ' '])
+                        .map(|f| f.trim().parse())
                         .collect::<Result<Vec<usize>, ParseIntError>>()
-                        .expect("-f to have numbers e.g. -f1 -f1,2"),
+                        .expect("-f to have numbers e.g. -f1 # -f1,2 # -f 1"),
                 );
                 continue;
             }
 
             if arg.starts_with("-d") {
-                let provided_delimiter = arg.trim_start_matches("-d");
+                let provided_delimiter = if arg == "-d" {
+                    args.next()
+                        .expect("delimiter must be a single character e.g. -d ,")
+                } else {
+                    arg.trim_start_matches("-d")
+                };
                 if provided_delimiter.len() != 1 {
                     panic!("delimiter must be a single character e.g. -d,");
                 }
@@ -169,6 +181,26 @@ mod tests {
         let input: &[u8] = "1?2?3\n4?5?6".as_bytes();
         let mut output = Vec::new();
         cut_cli_impl(&["-f1,3", "-d?"], input, &mut output).expect("to work");
+
+        assert_eq!(
+            String::from_utf8(output).expect("to be a string"),
+            "1?3\n4?6\n".to_string()
+        );
+    }
+
+    #[test]
+    fn cut_fields_and_delimiter_specified_with_space() {
+        let input: &[u8] = "1?2?3\n4?5?6".as_bytes();
+        let mut output = Vec::new();
+        cut_cli_impl(&["-f", "1,3", "-d", "?"], input, &mut output).expect("to work");
+
+        assert_eq!(
+            String::from_utf8(output).expect("to be a string"),
+            "1?3\n4?6\n".to_string()
+        );
+
+        let mut output = Vec::new();
+        cut_cli_impl(&["-f", "1 3", "-d", "?"], input, &mut output).expect("to work");
 
         assert_eq!(
             String::from_utf8(output).expect("to be a string"),
