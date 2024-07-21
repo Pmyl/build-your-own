@@ -1,9 +1,10 @@
 use std::env;
 
-mod wc;
+mod cut;
+mod huffman;
 mod json_checker;
 mod tools;
-mod huffman;
+mod wc;
 
 tools! {
     enum Tool {
@@ -24,6 +25,12 @@ tools! {
             description = "myown huffman [--input file] [--output file] [--encode] [--decode]",
             function = huffman::huffman_cli
         )]
-        Zip,
+        Huffman,
+        #[tool(
+            command = "cut",
+            description = "myown cut [-f] [-d] [-c] [file]",
+            function = cut::cut_cli
+        )]
+        Cut,
     }
 }
