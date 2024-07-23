@@ -1,7 +1,6 @@
-use crate::__::MyOwnError;
+use build_your_own_shared::my_own_error::MyOwnError;
 use std::env;
 
-mod __;
 mod cut;
 mod huffman;
 mod json_checker;

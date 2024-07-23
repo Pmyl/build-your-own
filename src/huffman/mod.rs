@@ -1,8 +1,9 @@
 use std::io::{stdin, stdout, Read, Write};
 
+use build_your_own_macros::cli_options;
 use targets::HuffmanInput;
 
-use crate::__::MyOwnError;
+use build_your_own_shared::my_own_error::MyOwnError;
 
 mod bits;
 mod decoder;

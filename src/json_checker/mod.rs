@@ -3,7 +3,7 @@ use std::io::{stdin, Read};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::__::MyOwnError;
+use build_your_own_shared::my_own_error::MyOwnError;
 
 // https://codingchallenges.fyi/challenges/challenge-json-checker
 

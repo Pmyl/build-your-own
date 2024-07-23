@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 
-use crate::__::MyOwnError;
+use build_your_own_macros::cli_options;
+use build_your_own_shared::my_own_error::MyOwnError;
 
 // https://codingchallenges.fyi/challenges/challenge-wc
 
@@ -9,7 +10,7 @@ pub fn wc_cli(args: &[&str]) -> Result<(), MyOwnError> {
 }
 
 fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> Result<(), MyOwnError> {
-    let cli_options = wc_cli_options(args);
+    let cli_options = WcCliOptions::from_args(args)?;
 
     let result = if let Some(filepath) = cli_options.filepath {
         let file =
@@ -20,19 +21,21 @@ fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> Resul
         wc(stdin)?
     };
 
-    if cli_options.lines {
+    let options = cli_options.options();
+
+    if options.lines {
         write!(stdout, "{} ", result.lines)?;
     }
 
-    if cli_options.words {
+    if options.words {
         write!(stdout, "{} ", result.words)?;
     }
 
-    if cli_options.characters {
+    if options.characters {
         write!(stdout, "{} ", result.characters)?;
     }
 
-    if cli_options.bytes {
+    if options.bytes {
         write!(stdout, "{} ", result.bytes)?;
     }
 
@@ -43,43 +46,6 @@ fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> Resul
     writeln!(stdout, "")?;
 
     Ok(())
-}
-
-fn wc_cli_options<'a>(args: &'a [&str]) -> WcCliOptions<'a> {
-    let mut options: WcCliOptions = Default::default();
-    let mut need_to_apply_defaults = true;
-
-    for arg in args.iter() {
-        match *arg {
-            "-c" => {
-                options.bytes = true;
-                need_to_apply_defaults = false;
-            }
-            "-l" => {
-                options.lines = true;
-                need_to_apply_defaults = false;
-            }
-            "-w" => {
-                options.words = true;
-                need_to_apply_defaults = false;
-            }
-            "-m" => {
-                options.characters = true;
-                need_to_apply_defaults = false;
-            }
-            filepath_parameter => {
-                options.filepath = Some(filepath_parameter);
-            }
-        }
-    }
-
-    if need_to_apply_defaults {
-        options.bytes = true;
-        options.lines = true;
-        options.words = true;
-    }
-
-    options
 }
 
 pub struct WcResult {
@@ -137,13 +103,54 @@ pub fn wc(reader: impl Read) -> Result<WcResult, MyOwnError> {
     })
 }
 
-#[derive(Default)]
-struct WcCliOptions<'a> {
-    filepath: Option<&'a str>,
+cli_options! {
+    struct WcCliOptions<'a> {
+        #[option()]
+        filepath: Option<&'a str>,
+
+        #[option(name = "-c")]
+        bytes: Option<bool>,
+
+        #[option(name = "-l")]
+        lines: Option<bool>,
+
+        #[option(name = "-w")]
+        words: Option<bool>,
+
+        #[option(name = "-m")]
+        characters: Option<bool>,
+    }
+}
+
+struct WcOptions {
     bytes: bool,
     lines: bool,
     words: bool,
     characters: bool,
+}
+
+impl<'a> WcCliOptions<'a> {
+    fn options(&self) -> WcOptions {
+        if self.bytes.is_none()
+            && self.lines.is_none()
+            && self.words.is_none()
+            && self.characters.is_none()
+        {
+            WcOptions {
+                bytes: true,
+                lines: true,
+                words: true,
+                characters: false,
+            }
+        } else {
+            WcOptions {
+                bytes: self.bytes.unwrap_or(false),
+                lines: self.lines.unwrap_or(false),
+                words: self.words.unwrap_or(false),
+                characters: self.characters.unwrap_or(false),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -151,70 +158,72 @@ mod test {
     use super::*;
 
     #[test]
-    fn wc_cli_options_cases() {
+    fn wc_cli_options_cases() -> Result<(), MyOwnError> {
         // All true
-        let cli_options = wc_cli_options(&["-c", "-l", "-w", "-m", "test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["-c", "-l", "-w", "-m", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, true);
-        assert_eq!(cli_options.lines, true);
-        assert_eq!(cli_options.words, true);
-        assert_eq!(cli_options.characters, true);
+        assert_eq!(cli_options.options().bytes, true);
+        assert_eq!(cli_options.options().lines, true);
+        assert_eq!(cli_options.options().words, true);
+        assert_eq!(cli_options.options().characters, true);
 
         // No filename
-        let cli_options = wc_cli_options(&["-c", "-l", "-w", "-m"]);
+        let cli_options = WcCliOptions::from_args(&["-c", "-l", "-w", "-m"])?;
         assert_eq!(cli_options.filepath, None);
-        assert_eq!(cli_options.bytes, true);
-        assert_eq!(cli_options.lines, true);
-        assert_eq!(cli_options.words, true);
-        assert_eq!(cli_options.characters, true);
+        assert_eq!(cli_options.options().bytes, true);
+        assert_eq!(cli_options.options().lines, true);
+        assert_eq!(cli_options.options().words, true);
+        assert_eq!(cli_options.options().characters, true);
 
         // Only lines
-        let cli_options = wc_cli_options(&["-l", "test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["-l", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, false);
-        assert_eq!(cli_options.lines, true);
-        assert_eq!(cli_options.words, false);
-        assert_eq!(cli_options.characters, false);
+        assert_eq!(cli_options.options().bytes, false);
+        assert_eq!(cli_options.options().lines, true);
+        assert_eq!(cli_options.options().words, false);
+        assert_eq!(cli_options.options().characters, false);
 
         // Only bytes
-        let cli_options = wc_cli_options(&["-c", "test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["-c", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, true);
-        assert_eq!(cli_options.lines, false);
-        assert_eq!(cli_options.words, false);
-        assert_eq!(cli_options.characters, false);
+        assert_eq!(cli_options.options().bytes, true);
+        assert_eq!(cli_options.options().lines, false);
+        assert_eq!(cli_options.options().words, false);
+        assert_eq!(cli_options.options().characters, false);
 
         // Only words
-        let cli_options = wc_cli_options(&["-w", "test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["-w", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, false);
-        assert_eq!(cli_options.lines, false);
-        assert_eq!(cli_options.words, true);
-        assert_eq!(cli_options.characters, false);
+        assert_eq!(cli_options.options().bytes, false);
+        assert_eq!(cli_options.options().lines, false);
+        assert_eq!(cli_options.options().words, true);
+        assert_eq!(cli_options.options().characters, false);
 
         // Only characters
-        let cli_options = wc_cli_options(&["-m", "test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["-m", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, false);
-        assert_eq!(cli_options.lines, false);
-        assert_eq!(cli_options.words, false);
-        assert_eq!(cli_options.characters, true);
+        assert_eq!(cli_options.options().bytes, false);
+        assert_eq!(cli_options.options().lines, false);
+        assert_eq!(cli_options.options().words, false);
+        assert_eq!(cli_options.options().characters, true);
 
         // Only filepath should have default options
-        let cli_options = wc_cli_options(&["test.txt"]);
+        let cli_options = WcCliOptions::from_args(&["test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, true);
-        assert_eq!(cli_options.lines, true);
-        assert_eq!(cli_options.words, true);
-        assert_eq!(cli_options.characters, false);
+        assert_eq!(cli_options.options().bytes, true);
+        assert_eq!(cli_options.options().lines, true);
+        assert_eq!(cli_options.options().words, true);
+        assert_eq!(cli_options.options().characters, false);
 
         // All true in inverted order
-        let cli_options = wc_cli_options(&["test.txt", "-l", "-c", "-w", "-m"]);
+        let cli_options = WcCliOptions::from_args(&["test.txt", "-l", "-c", "-w", "-m"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));
-        assert_eq!(cli_options.bytes, true);
-        assert_eq!(cli_options.lines, true);
-        assert_eq!(cli_options.words, true);
-        assert_eq!(cli_options.characters, true);
+        assert_eq!(cli_options.options().bytes, true);
+        assert_eq!(cli_options.options().lines, true);
+        assert_eq!(cli_options.options().words, true);
+        assert_eq!(cli_options.options().characters, true);
+
+        Ok(())
     }
 
     #[test]

@@ -1,6 +1,11 @@
+[workspace]
+members = ["macros"]
+
 [package]
 name = "build-your-own"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+build-your-own-macros = { path = "macros" }
+build-your-own-shared = { path = "shared" }

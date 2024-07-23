@@ -35,6 +35,7 @@ impl<'a, T, E: Error + 'static> DescribableError<T, E> for Result<T, E> {
 
 ActualError!(FromUtf8Error);
 ActualError!(&str);
+ActualError!(String);
 
 impl From<std::io::Error> for MyOwnError {
     fn from(e: std::io::Error) -> Self {

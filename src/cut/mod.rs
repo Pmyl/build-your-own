@@ -1,9 +1,7 @@
-use std::{
-    io::{stdin, stdout, BufRead, BufReader, Read, Write},
-    num::ParseIntError,
-};
+use std::io::{stdin, stdout, BufRead, BufReader, Read, Write};
 
-use crate::__::{DescribableError, MyOwnError};
+use build_your_own_macros::cli_options;
+use build_your_own_shared::my_own_error::MyOwnError;
 
 // https://codingchallenges.fyi/challenges/challenge-cut
 
@@ -30,19 +28,18 @@ fn cut(options: CutOptions, input: impl Read, mut output: impl Write) -> Result<
 
     while reader.read_until(b'\n', &mut buf)? != 0 {
         let line = String::from_utf8(buf)?.trim_end().to_string();
-        if let Some(ref fields) = options.fields {
-            let all_fields: Vec<&str> = line.split(options.delimiter).collect();
+        let all_fields: Vec<&str> = line.split(options.delimiter).collect();
 
-            write!(
-                output,
-                "{}",
-                fields
-                    .iter()
-                    .map(|f| all_fields.get(f - 1).map(|s| *s).unwrap_or(""))
-                    .collect::<Vec<&str>>()
-                    .join(options.delimiter.to_string().as_str())
-            )?;
-        }
+        write!(
+            output,
+            "{}",
+            options
+                .fields
+                .iter()
+                .map(|f| all_fields.get(f - 1).map(|s| *s).unwrap_or(""))
+                .collect::<Vec<&str>>()
+                .join(options.delimiter.to_string().as_str())
+        )?;
 
         writeln!(output)?;
         buf = line.into_bytes();
@@ -51,74 +48,18 @@ fn cut(options: CutOptions, input: impl Read, mut output: impl Write) -> Result<
     Ok(())
 }
 
-struct CutCliOptions<'a> {
-    input_file: Option<&'a str>,
-    options: CutOptions,
-}
+cli_options! {
+    struct CutCliOptions<'a> {
+        #[option()]
+        input_file: Option<&'a str>,
 
-struct CutOptions {
-    fields: Option<Vec<usize>>,
-    delimiter: char,
-}
-
-impl<'a> CutCliOptions<'a> {
-    fn from_args(args: &[&'a str]) -> Result<Self, MyOwnError> {
-        let mut input_file = None;
-        let mut fields = None;
-        let mut delimiter = '\t';
-
-        let mut args = args.iter();
-        loop {
-            let arg = args.next();
-            let Some(&arg) = arg else {
-                break;
-            };
-
-            if arg.starts_with("-f") {
-                let fields_arg = if arg == "-f" {
-                    args.next()
-                        .ok_or_else(|| "-f to have numbers after e.g. -f 1 # -f 1,2 # -f \"1 2\"")?
-                } else {
-                    arg.trim_start_matches("-f")
-                };
-
-                fields = Some(
-                    fields_arg
-                        .split(&[',', ' '])
-                        .map(|f| f.trim().parse())
-                        .collect::<Result<Vec<usize>, ParseIntError>>()
-                        .describe_error("-f to have numbers e.g. -f1 # -f1,2 # -f 1 | {}")?,
-                );
-                continue;
-            }
-
-            if arg.starts_with("-d") {
-                let provided_delimiter = if arg == "-d" {
-                    args.next()
-                        .ok_or_else(|| "delimiter must be a single character e.g. -d ,")?
-                } else {
-                    arg.trim_start_matches("-d")
-                };
-                if provided_delimiter.len() != 1 {
-                    return Err(MyOwnError::ActualError(
-                        "delimiter must be a single character e.g. -d,".into(),
-                    ));
-                }
-                delimiter = provided_delimiter.chars().next().unwrap();
-                continue;
-            }
-
-            if arg == "-" {
-                continue;
-            }
-
-            input_file = Some(arg);
+        #[suboptions(name = "options")]
+        struct CutOptions {
+            #[option(name = "-f", delimiters = &[' ', ','])]
+            fields: Vec<usize>,
+            #[option(name = "-d", default = '\t')]
+            delimiter: char,
         }
-
-        Ok(Self {
-            input_file,
-            options: CutOptions { fields, delimiter },
-        })
     }
 }
 
@@ -127,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cut_field_all_lines() {
+    fn cut_field_all_lines_with_default_delimiter() {
         let input: &[u8] = "1\t2\t3\n4\t5\t6".as_bytes();
         let mut output = Vec::new();
         cut_cli_impl(&["-f1"], input, &mut output).expect("to work");
