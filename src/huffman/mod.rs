@@ -21,7 +21,7 @@ fn huffman_cli_impl<'a>(
     input: impl Read,
     mut output: impl Write,
 ) -> Result<(), MyOwnError> {
-    let options = HuffmanOptions::from_args(args);
+    let options = HuffmanOptions::from_args(args)?;
     let input = HuffmanInput::new(options.input_file, input);
 
     if let HuffmanMode::Encode = options.mode {
@@ -31,37 +31,14 @@ fn huffman_cli_impl<'a>(
     }
 }
 
-struct HuffmanOptions<'a> {
-    input_file: Option<&'a str>,
-    mode: HuffmanMode,
-}
+cli_options! {
+    struct HuffmanOptions<'a> {
+        #[option()]
+        input_file: Option<&'a str>,
 
-impl<'a> HuffmanOptions<'a> {
-    fn from_args(args: &[&'a str]) -> Self {
-        let mut mode = HuffmanMode::Encode;
-        let mut input_file = None;
-
-        let mut args = args.iter();
-        loop {
-            let arg = args.next();
-            let Some(&arg) = arg else {
-                break;
-            };
-
-            if arg == "--decode" {
-                mode = HuffmanMode::Decode;
-                continue;
-            }
-
-            if arg == "--encode" {
-                mode = HuffmanMode::Encode;
-                continue;
-            }
-
-            input_file = Some(arg);
-        }
-
-        Self { input_file, mode }
+        #[option_enum(name = "--decode", variant = HuffmanMode::Decode)]
+        #[option_enum(name = "--encode", variant = HuffmanMode::Encode, default = true)]
+        mode: HuffmanMode,
     }
 }
 

@@ -106,6 +106,22 @@ fn default_impl(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
         })
         .collect::<Vec<_>>();
 
+    let default_enum_field_statements = strct
+        .enums
+        .iter()
+        .map(|f| {
+            let name = &f.0.name;
+            let default =
+                &f.1.default
+                    .as_ref()
+                    .map(|d| d.to_token_stream())
+                    .unwrap_or_else(|| quote! { Default::default() });
+            quote! {
+                #name: #default
+            }
+        })
+        .collect::<Vec<_>>();
+
     let default_struct_statements = strct
         .structs
         .iter()
@@ -123,6 +139,7 @@ fn default_impl(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
             fn default() -> Self {
                 Self {
                     #(#default_field_statements,)*
+                    #(#default_enum_field_statements,)*
                     #(#default_struct_statements,)*
                 }
             }
@@ -184,6 +201,21 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
         }
     });
 
+    strct.enums.iter().for_each(|f| {
+        let field_name = &f.0.name;
+
+        f.1.variants.iter().for_each(|v| {
+            let variant_name = &v.name;
+            let variant = &v.variant;
+            option_parsers.push(quote! {
+                if arg == #variant_name {
+                    self.#field_name = #variant;
+                    return Ok(true);
+                }
+            });
+        });
+    });
+
     let default_option_parser = default_option_parser.unwrap_or_else(|| {
         quote! {
             Ok(false)
@@ -202,7 +234,7 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
 
 fn parse_arg(f: &(MyOwnStructComponentField, MyOwnFieldAttribute)) -> proc_macro2::TokenStream {
     let split_multiple_values = if let MyOwnType::Vec { .. } = f.0.ty {
-        let delimiters = &f.1.delimiters;
+        let delimiters = f.1.delimiters();
         quote! {
             arg_value
                 .split(&[#(#delimiters,)*])
@@ -280,6 +312,13 @@ fn struct_to_token_stream(main_struct: MyOwnStruct) -> proc_macro2::TokenStream 
                 #name: #ty
             }
         });
+        let enum_fields = strct.enums.iter().map(|f| {
+            let name = &f.0.name;
+            let ty = f.0.ty.to_token_stream();
+            quote! {
+                #name: #ty
+            }
+        });
         let struct_fields = strct.structs.iter().map(|f| {
             let name = &f.name;
             let ty = &f.strct.name;
@@ -293,6 +332,7 @@ fn struct_to_token_stream(main_struct: MyOwnStruct) -> proc_macro2::TokenStream 
         structs_code.push(quote! {
             struct #name #lifetime_generics {
                 #(#fields,)*
+                #(#enum_fields,)*
                 #(#struct_fields,)*
             }
         });
@@ -337,9 +377,10 @@ fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
     let mut group_tokens = group.stream().into_iter().peekable();
     let mut structs = Vec::new();
     let mut fields = Vec::new();
+    let mut enums = Vec::new();
 
     loop {
-        let attribute = match_attribute(&mut group_tokens).expect("to find attribute attribute");
+        let attribute = match_attribute(&mut group_tokens).expect("to find attribute");
 
         match attribute {
             MyOwnAttribute::Field(field_attribute) => {
@@ -352,6 +393,11 @@ fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
                     strct: match_struct(&mut group_tokens)
                         .expect("struct after `suboptions` attribute"),
                 });
+            }
+            MyOwnAttribute::EnumField(enum_attribute) => {
+                let field =
+                    match_struct_field(&mut group_tokens).expect("field after enum attributes");
+                enums.push((field, enum_attribute));
             }
         }
 
@@ -366,6 +412,7 @@ fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
         name: struct_name_ident,
         lifetime,
         fields,
+        enums,
         structs,
     })
 }
@@ -454,6 +501,9 @@ fn match_struct_group(tokens: &mut Peekable<IntoIter>) -> Group {
 }
 
 fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
+    if let None = peek_punct_value(tokens, '#') {
+        return None;
+    }
     match_punct_value(tokens, '#');
 
     let group =
@@ -472,7 +522,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
                 .peekable();
 
         if let Some(_) = attributes_tokens.next() {
-            panic!("unexpected attribute, should only have one attribute");
+            panic!("unexpected attribute, should only have one attribute per #[..] block");
         };
 
         let mut attribute = MyOwnFieldAttribute::default();
@@ -483,7 +533,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
             match field {
                 Some(field) => match field.name.as_ref() {
                     "name" => attribute.name = Some(field.value_as_string()),
-                    "delimiters" => attribute.delimiters = field.value_as_char_vec(),
+                    "delimiters" => attribute.delimiters = Some(field.value_as_char_vec()),
                     "default" => attribute.default = Some(field.value),
                     unhandled => panic!("unhandled attribute field `{}`", unhandled),
                 },
@@ -500,6 +550,19 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
             panic!("unexpected token in attribute, all attributes should be separated by `,`");
         }
 
+        // TODO: this loop is useless because the next attribute will find the next and so on until the end
+        loop {
+            let Some(next_attribute) = match_attribute(tokens) else {
+                break;
+            };
+
+            let MyOwnAttribute::Field(next_attribute) = next_attribute else {
+                panic!("expected option attribute after a previous option attribute");
+            };
+
+            attribute.merge(next_attribute);
+        }
+
         Some(MyOwnAttribute::Field(attribute))
     } else if attribute_name == "suboptions" {
         let mut group_tokens =
@@ -510,7 +573,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
                 .peekable();
 
         if let Some(_) = attributes_tokens.next() {
-            panic!("unexpected attribute, should only have one attribute");
+            panic!("unexpected attribute, should only have one attribute per #[..] block");
         };
 
         let field = match_attribute_field(&mut group_tokens);
@@ -528,6 +591,70 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
         }
 
         Some(MyOwnAttribute::Struct(suboptions_name))
+    } else if attribute_name == "option_enum" {
+        let mut group_tokens =
+            match_group(&mut attributes_tokens, proc_macro2::Delimiter::Parenthesis)
+                .expect("expected `(` after `option_enum`")
+                .stream()
+                .into_iter()
+                .peekable();
+
+        if let Some(_) = attributes_tokens.next() {
+            panic!("unexpected attribute, should only have one attribute per #[..] block");
+        };
+
+        let mut attribute = MyOwnEnumFieldAttribute::default();
+        let mut variant = MyOwnEnumFieldVariantAttribute::default();
+
+        loop {
+            let field = match_attribute_field(&mut group_tokens);
+
+            match field {
+                Some(field) => match field.name.as_ref() {
+                    "name" => variant.name = Some(field.value_as_string()),
+                    "variant" => variant.variant = Some(field.value),
+                    "default" => {
+                        if let Some(_) = attribute.default {
+                            panic!("`default` variant can only be set once");
+                        }
+
+                        if variant.variant.is_none() {
+                            panic!("`default` should be set after `variant` field");
+                        }
+
+                        attribute.default = variant.variant.clone()
+                    }
+                    unhandled => panic!("unhandled attribute field `{}`", unhandled),
+                },
+                None => break,
+            }
+
+            if let None = peek_punct_value(&mut group_tokens, ',') {
+                break;
+            }
+            match_punct_value(&mut group_tokens, ',');
+        }
+
+        attribute.variants.push(variant);
+
+        if let Some(_) = group_tokens.peek() {
+            panic!("unexpected token in attribute, all attributes should be separated by `,`");
+        }
+
+        // TODO: this loop is useless because the next attribute will find the next and so on until the end
+        loop {
+            let Some(next_attribute) = match_attribute(tokens) else {
+                break;
+            };
+
+            let MyOwnAttribute::EnumField(next_attribute) = next_attribute else {
+                panic!("expected option_enum attribute after a previous option_enum attribute");
+            };
+
+            attribute.merge(next_attribute);
+        }
+
+        Some(MyOwnAttribute::EnumField(attribute))
     } else {
         panic!("unhandled attribute `{}`", attribute_name);
     }
@@ -628,6 +755,16 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                 panic!("expected `&` punct only");
             }
         }
+        TokenTree::Ident(ident) => {
+            let mut path = vec![ident];
+            while let Some(_) = peek_punct_value(tokens, ':') {
+                match_punct_value(tokens, ':');
+                match_punct_value(tokens, ':');
+                let ident = match_ident(tokens).expect("expected ident after `::`");
+                path.push(ident);
+            }
+            Some(MyOwnValue::Path(path))
+        }
         tt => panic!("unexpected value {:?}", tt),
     }
 }
@@ -710,27 +847,86 @@ fn match_ident(tokens: &mut Peekable<IntoIter>) -> Option<Ident> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
+struct MyOwnEnumFieldAttribute {
+    variants: Vec<MyOwnEnumFieldVariantAttribute>,
+    default: Option<MyOwnValue>,
+}
+
+impl MyOwnEnumFieldAttribute {
+    fn merge(&mut self, attribute: MyOwnEnumFieldAttribute) {
+        if let Some(same) = self
+            .variants
+            .iter()
+            .find(|v| attribute.variants.iter().any(|av| v.name == av.name))
+        {
+            panic!("Name already specified {:?}", same.name);
+        }
+
+        match (&self.default, &attribute.default) {
+            (Some(_), Some(_)) => panic!("Default already specified"),
+            (None, Some(_)) => self.default = attribute.default,
+            _ => {}
+        }
+
+        self.variants.extend(attribute.variants);
+    }
+}
+
+#[derive(Debug, Default)]
+struct MyOwnEnumFieldVariantAttribute {
+    name: Option<String>,
+    // TODO: this should just be the Path value?
+    variant: Option<MyOwnValue>,
+}
+
+#[derive(Debug, Default)]
 struct MyOwnFieldAttribute {
     name: Option<String>,
-    delimiters: Vec<char>,
+    delimiters: Option<Vec<char>>,
     default: Option<MyOwnValue>,
+}
+
+impl MyOwnFieldAttribute {
+    fn delimiters(&self) -> Vec<char> {
+        self.delimiters
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| vec![','])
+    }
+
+    fn merge(&mut self, attribute: MyOwnFieldAttribute) {
+        if let Some(name) = attribute.name {
+            if let Some(self_name) = &self.name {
+                panic!("Name already specified to be {}", self_name);
+            }
+
+            self.name = Some(name);
+        }
+
+        if let Some(delimiters) = attribute.delimiters {
+            if let Some(self_delimiters) = &self.delimiters {
+                panic!("Delimiters already specified to be {:?}", self_delimiters);
+            }
+
+            self.delimiters = Some(delimiters);
+        }
+
+        if let Some(default) = attribute.default {
+            if let Some(self_default) = &self.default {
+                panic!("Default already specified to be {:?}", self_default);
+            }
+
+            self.default = Some(default);
+        }
+    }
 }
 
 #[derive(Debug)]
 enum MyOwnAttribute {
     Field(MyOwnFieldAttribute),
+    EnumField(MyOwnEnumFieldAttribute),
     Struct(String),
-}
-
-impl Default for MyOwnFieldAttribute {
-    fn default() -> Self {
-        Self {
-            name: None,
-            delimiters: vec![','],
-            default: None,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -763,12 +959,13 @@ impl MyOwnAttributeField {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum MyOwnValue {
     Char(char),
     String(String),
     Bool(bool),
     CharVec(Vec<char>),
+    Path(Vec<Ident>),
 }
 
 impl ToTokens for MyOwnValue {
@@ -792,6 +989,11 @@ impl ToTokens for MyOwnValue {
             MyOwnValue::Bool(value) => {
                 tokens.extend(quote! {
                     #value
+                });
+            }
+            MyOwnValue::Path(values) => {
+                tokens.extend(quote! {
+                    #(#values)::*
                 });
             }
         }
@@ -919,6 +1121,7 @@ struct MyOwnStruct {
     name: Ident,
     lifetime: Option<(Punct, Punct, Ident, Punct)>,
     fields: Vec<(MyOwnStructComponentField, MyOwnFieldAttribute)>,
+    enums: Vec<(MyOwnStructComponentField, MyOwnEnumFieldAttribute)>,
     structs: Vec<MyOwnStructComponentStruct>,
 }
 
