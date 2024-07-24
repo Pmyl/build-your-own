@@ -8,6 +8,5 @@ proc-macro = true
 
 [dependencies]
 build-your-own-shared = { path = "../shared" }
-syn = { version = "2.0.71", features = ["extra-traits"] }
 quote = "1.0.36"
 proc-macro2 = "1.0.86"
