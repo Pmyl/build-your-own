@@ -1,5 +1,5 @@
 [workspace]
-members = ["macros"]
+members = ["macros", "shared"]
 
 [package]
 name = "build-your-own"
