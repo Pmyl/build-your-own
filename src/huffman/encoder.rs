@@ -6,7 +6,7 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 
 pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnError> {
     let frequencies = huffman_frequencies(&mut input.take())?;
@@ -20,7 +20,7 @@ pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnE
 
 fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], MyOwnError> {
     let mut frequencies: [usize; 256] = [0; 256];
-    let mut buf = vec![0u8; 65536];
+    let mut buf = vec![0u8; 10];
 
     loop {
         let count = input.read(&mut buf)?;
@@ -33,7 +33,6 @@ fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], MyOwnError
             .iter()
             .copied()
             .for_each(|b| frequencies[b as usize] += 1);
-        buf.clear();
     }
 
     Ok(frequencies)
