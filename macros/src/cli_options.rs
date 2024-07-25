@@ -550,12 +550,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
             panic!("unexpected token in attribute, all attributes should be separated by `,`");
         }
 
-        // TODO: this loop is useless because the next attribute will find the next and so on until the end
-        loop {
-            let Some(next_attribute) = match_attribute(tokens) else {
-                break;
-            };
-
+        if let Some(next_attribute) = match_attribute(tokens) {
             let MyOwnAttribute::Field(next_attribute) = next_attribute else {
                 panic!("expected option attribute after a previous option attribute");
             };
@@ -641,12 +636,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
             panic!("unexpected token in attribute, all attributes should be separated by `,`");
         }
 
-        // TODO: this loop is useless because the next attribute will find the next and so on until the end
-        loop {
-            let Some(next_attribute) = match_attribute(tokens) else {
-                break;
-            };
-
+        if let Some(next_attribute) = match_attribute(tokens) {
             let MyOwnAttribute::EnumField(next_attribute) = next_attribute else {
                 panic!("expected option_enum attribute after a previous option_enum attribute");
             };

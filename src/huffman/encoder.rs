@@ -20,16 +20,20 @@ pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnE
 
 fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], MyOwnError> {
     let mut frequencies: [usize; 256] = [0; 256];
+    let mut buf = vec![0u8; 65536];
 
-    let mut reader = BufReader::new(input);
-    let mut buf = Vec::<u8>::new();
+    loop {
+        let count = input.read(&mut buf)?;
 
-    while reader.read_until(b'\n', &mut buf)? != 0 {
-        for byte in buf.into_iter() {
-            frequencies[byte as usize] = frequencies[byte as usize] + 1;
+        if count == 0 {
+            break;
         }
 
-        buf = Vec::new();
+        buf[..count]
+            .iter()
+            .copied()
+            .for_each(|b| frequencies[b as usize] += 1);
+        buf.clear();
     }
 
     Ok(frequencies)
