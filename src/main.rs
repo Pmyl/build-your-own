@@ -4,6 +4,7 @@ use std::env;
 mod cut;
 mod huffman;
 mod json_checker;
+mod redis;
 mod tools;
 mod wc;
 
@@ -33,5 +34,11 @@ tools! {
             function = cut::cut_cli
         )]
         Cut,
+        #[tool(
+            command = "redis",
+            description = "#WIP# myown redis",
+            function = redis::redis_cli
+        )]
+        Redis,
     }
 }
