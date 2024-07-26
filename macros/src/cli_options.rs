@@ -666,10 +666,10 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
 
     match token {
         TokenTree::Literal(literal) => {
-            let literal = literal.to_string();
-            if literal.starts_with('\'') {
+            let literal_string = literal.to_string();
+            if literal_string.starts_with('\'') {
                 Some(MyOwnValue::Char(
-                    literal
+                    literal_string
                         .to_string()
                         .strip_prefix("\'")
                         .expect("expected char to contain \' at the beginning")
@@ -681,9 +681,9 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                         .parse()
                         .expect("expected char to be parseable"),
                 ))
-            } else if literal.starts_with('"') {
+            } else if literal_string.starts_with('"') {
                 Some(MyOwnValue::String(
-                    literal
+                    literal_string
                         .to_string()
                         .strip_prefix("\"")
                         .expect("expected string to contain \" at the beginning")
@@ -691,12 +691,19 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                         .expect("expected string to contain \" at the end")
                         .to_string(),
                 ))
-            } else if literal == "true" {
+            } else if literal_string == "true" {
                 Some(MyOwnValue::Bool(true))
-            } else if literal == "false" {
+            } else if literal_string == "false" {
                 Some(MyOwnValue::Bool(false))
+            } else if literal_string
+                .chars()
+                .nth(0)
+                .expect("default should have a value")
+                .is_digit(10)
+            {
+                Some(MyOwnValue::Number(literal))
             } else {
-                panic!("unexpected literal value {}", literal);
+                panic!("unexpected literal value {}", literal_string);
             }
         }
         TokenTree::Punct(punct) => {
@@ -956,6 +963,7 @@ enum MyOwnValue {
     Bool(bool),
     CharVec(Vec<char>),
     Path(Vec<Ident>),
+    Number(Literal),
 }
 
 impl ToTokens for MyOwnValue {
@@ -984,6 +992,11 @@ impl ToTokens for MyOwnValue {
             MyOwnValue::Path(values) => {
                 tokens.extend(quote! {
                     #(#values)::*
+                });
+            }
+            MyOwnValue::Number(value) => {
+                tokens.extend(quote! {
+                    #value
                 });
             }
         }

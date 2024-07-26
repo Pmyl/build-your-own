@@ -7,6 +7,7 @@ mod json_checker;
 mod redis;
 mod tools;
 mod wc;
+mod xxd;
 
 tools! {
     enum Tool {
@@ -40,5 +41,11 @@ tools! {
             function = redis::redis_cli
         )]
         Redis,
+        #[tool(
+            command = "xxd",
+            description = "#WIP# myown xxd",
+            function = xxd::xxd_cli
+        )]
+        Xxd,
     }
 }

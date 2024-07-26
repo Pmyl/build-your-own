@@ -53,8 +53,8 @@ macro_rules! tools {
                         Tool::$variant => $function(&args.iter().skip(1).map(|s| &**s).collect::<Vec<&str>>()),
                     )+
                 }) {
-                    Err(MyOwnError::ActualError(e)) => panic!("{}", e),
-                    Err(MyOwnError::ActualErrorWithDescription(e, description)) => panic!("{}: {}", description, e),
+                    Err(MyOwnError::ActualError(e)) => eprint!("{}", e),
+                    Err(MyOwnError::ActualErrorWithDescription(e, description)) => eprint!("{}: {}", description, e),
                     _ => (),
                 },
                 None => Tool::list(),

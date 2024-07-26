@@ -1,4 +1,4 @@
-use std::{error::Error, string::FromUtf8Error};
+use std::{error::Error, num::ParseIntError, string::FromUtf8Error};
 
 macro_rules! ActualError {
     ($e:ty) => {
@@ -34,6 +34,7 @@ impl<'a, T, E: Error + 'static> DescribableError<T, E> for Result<T, E> {
 }
 
 ActualError!(FromUtf8Error);
+ActualError!(ParseIntError);
 ActualError!(&str);
 ActualError!(String);
 
