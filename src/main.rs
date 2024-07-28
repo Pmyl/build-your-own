@@ -1,4 +1,4 @@
-use build_your_own_shared::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnError;
 use std::env;
 
 mod cut;

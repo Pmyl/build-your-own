@@ -3,7 +3,7 @@ use std::io::{stdin, stdout, Read, Write};
 use build_your_own_macros::cli_options;
 use targets::HuffmanInput;
 
-use build_your_own_shared::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnError;
 
 mod bits;
 mod decoder;

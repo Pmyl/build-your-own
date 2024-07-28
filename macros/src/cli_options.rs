@@ -48,13 +48,13 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
 
     let from_args_implementations = quote! {
         impl #lifetime_generics #name #lifetime_generics {
-            fn from_args(args: &[&#lifetime str]) -> Result<Self, build_your_own_shared::my_own_error::MyOwnError> {
+            fn from_args(args: &[&#lifetime str]) -> Result<Self, build_your_own_utils::my_own_error::MyOwnError> {
                 let mut options = <#name as core::default::Default>::default();
 
                 let mut args = args.iter();
                 while let Some(arg) = args.next() {
                     #(#update_arg_statements)*
-                    return Err(build_your_own_shared::my_own_error::MyOwnError::ActualError(format!("unknown argument: {}", arg).into()));
+                    return Err(build_your_own_utils::my_own_error::MyOwnError::ActualError(format!("unknown argument: {}", arg).into()));
                 }
 
                 Ok(options)
@@ -224,7 +224,7 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
 
     quote! {
         impl #lifetime_generics #name #lifetime_generics {
-            fn update_arg(&mut self, arg: &#lifetime str, args: &mut core::slice::Iter<&#lifetime str>) -> Result<bool, build_your_own_shared::my_own_error::MyOwnError> {
+            fn update_arg(&mut self, arg: &#lifetime str, args: &mut core::slice::Iter<&#lifetime str>) -> Result<bool, build_your_own_utils::my_own_error::MyOwnError> {
                 #(#option_parsers)*
                 #default_option_parser
             }
@@ -252,7 +252,7 @@ fn parse_arg(f: &(MyOwnStructComponentField, MyOwnFieldAttribute)) -> proc_macro
             .map(|arg| arg.parse::<#ty>())
             .collect::<Result<Vec<_>, _>>()
             // TODO: add option to describe parsing error
-            .map_err(|e| build_your_own_shared::my_own_error::MyOwnError::ActualErrorWithDescription(e.into(), format!("error parsing {}", arg).into()))?
+            .map_err(|e| build_your_own_utils::my_own_error::MyOwnError::ActualErrorWithDescription(e.into(), format!("error parsing {}", arg).into()))?
         }
     } else {
         quote! {

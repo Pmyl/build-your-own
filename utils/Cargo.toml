@@ -1,5 +1,5 @@
 [package]
-name = "build-your-own-shared"
+name = "build-your-own-utils"
 version = "0.1.0"
 edition = "2021"
 

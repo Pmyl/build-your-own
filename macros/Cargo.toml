@@ -7,6 +7,6 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-build-your-own-shared = { path = "../shared" }
+build-your-own-utils = { path = "../utils" }
 quote = "1.0.36"
 proc-macro2 = "1.0.86"

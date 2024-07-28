@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{Read, Write};
 
-use build_your_own_shared::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnError;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Bits {

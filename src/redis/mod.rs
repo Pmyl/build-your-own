@@ -3,7 +3,7 @@ use std::{
     net::TcpListener,
 };
 
-use build_your_own_shared::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnError;
 
 // https://codingchallenges.fyi/challenges/challenge-redis
 

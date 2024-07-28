@@ -7,20 +7,20 @@ name = "build-your-own"
 version = "0.1.0"
 dependencies = [
  "build-your-own-macros",
- "build-your-own-shared",
+ "build-your-own-utils",
 ]
 
 [[package]]
 name = "build-your-own-macros"
 version = "0.1.0"
 dependencies = [
- "build-your-own-shared",
+ "build-your-own-utils",
  "proc-macro2",
  "quote",
 ]
 
 [[package]]
-name = "build-your-own-shared"
+name = "build-your-own-utils"
 version = "0.1.0"
 
 [[package]]
