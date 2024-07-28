@@ -43,7 +43,7 @@ tools! {
         Redis,
         #[tool(
             command = "xxd",
-            description = "#WIP# myown xxd",
+            description = "myown xxd [-e] [-l] [-g] [-c] [-s] [-r] [file]",
             function = xxd::xxd_cli
         )]
         Xxd,

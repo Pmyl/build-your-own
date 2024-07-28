@@ -27,7 +27,7 @@ macro_rules! tools {
             }
 
             fn list() {
-                println!("Tool <usage> - Example:");
+                println!("Tools:");
                 $(
                     println!("{}", $description);
                 )+

@@ -6,6 +6,8 @@ use std::{
 use build_your_own_macros::cli_options;
 use build_your_own_shared::my_own_error::MyOwnError;
 
+// https://codingchallenges.fyi/challenges/challenge-xxd
+
 pub fn xxd_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let options = XxdCliOptions::from_args(args)?;
 
