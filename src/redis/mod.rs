@@ -1,14 +1,17 @@
+use build_your_own_utils::my_own_error::MyOwnError;
+use std::collections::HashMap;
 use std::{
     io::{Read, Write},
     net::TcpListener,
 };
-use std::collections::HashMap;
-use build_your_own_utils::my_own_error::MyOwnError;
 
 // https://codingchallenges.fyi/challenges/challenge-redis
 
 pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let port = 6379;
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
+    println!("Listening on port {}", port);
+
     let mut redis = Redis::new();
 
     for stream in listener.incoming() {
@@ -17,12 +20,8 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
         let mut buffer = [0; 1024];
         stream.read(&mut buffer)?;
         let request = String::from_utf8_lossy(&buffer);
-        println!("Request: {}", request);
 
         let response = redis.process(&request);
-
-        println!("Response {}", response);
-
         stream.write(response.as_bytes())?;
     }
 
@@ -32,10 +31,14 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
 struct Redis {
     data: HashMap<String, String>,
 }
+
 impl Redis {
     fn new() -> Self {
-        Self { data: HashMap::new() }
+        Self {
+            data: HashMap::new(),
+        }
     }
+    
     fn process(&mut self, input: &str) -> String {
         let arguments = parse_input(input);
 
@@ -49,43 +52,40 @@ impl Redis {
                     format!("+{}\r\n", arguments[1])
                 }
             }
-            "PING" => {
-                "+PONG\r\n".to_string()
-            }
+            "PING" => "+PONG\r\n".to_string(),
             "SET" => {
-                self.data.insert(arguments[1].to_string(), arguments[2].to_string());
+                self.data
+                    .insert(arguments[1].to_string(), arguments[2].to_string());
                 "+OK\r\n".to_string()
             }
             "GET" => {
                 let value = self.data.get(&arguments[1].to_string());
                 match value {
                     None => "$-1\r\n".to_string(),
-                    Some(value) => format!("+{}\r\n", value)
+                    Some(value) => format!("+{}\r\n", value),
                 }
             }
-            _ => format!("-unknown command '{}'\r\n", first_argument)
+            _ => format!("-unknown command '{}'\r\n", first_argument),
         }
     }
 }
 
-
 fn parse_input(input: &str) -> Vec<&str> {
     let mut result = vec![];
 
-    input.split("\r\n")
-        .skip(1)
-        .enumerate()
-        .for_each(|(i, x)| {
-            if i % 2 == 1 {
-                result.push(x);
-            }
-        });
+    input.split("\r\n").skip(1).enumerate().for_each(|(i, x)| {
+        if i % 2 == 1 {
+            result.push(x);
+        }
+    });
 
     return result;
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    
     #[test]
     fn parse_input_test() {
         let result = parse_input("*1\r\n$4\r\nPING\r\n");
@@ -94,6 +94,7 @@ mod tests {
         let result = parse_input("*2\r\n$4\r\nECHO\r\n$11\r\nHello World");
         assert_eq!(result, vec!["ECHO", "Hello World"]);
     }
+    
     #[test]
     fn pong() {
         let mut redis = Redis::new();
