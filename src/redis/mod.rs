@@ -9,6 +9,7 @@ use build_your_own_utils::my_own_error::MyOwnError;
 
 pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let mut redis = Redis::new();
 
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -18,7 +19,7 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
         let request = String::from_utf8_lossy(&buffer);
         println!("Request: {}", request);
 
-        let response = redis(&request, &mut HashMap::new());
+        let response = redis.process(&request);
 
         println!("Response {}", response);
 
@@ -28,29 +29,45 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
     Ok(())
 }
 
-fn redis(input: &str, data: &mut HashMap<String, String>) -> String {
-    let arguments = parse_input(input);
+struct Redis {
+    data: HashMap<String, String>,
+}
+impl Redis {
+    fn new() -> Self {
+        Self { data: HashMap::new() }
+    }
+    fn process(&mut self, input: &str) -> String {
+        let arguments = parse_input(input);
 
-    let first_argument = arguments[0];
+        let first_argument = arguments[0];
 
-    match first_argument {
-        "ECHO" => {
-            if arguments.len() != 2 {
-                "-ERR wrong number of arguments for command\r\n".to_string()
-            } else {
-                format!("+{}\r\n", arguments[1])
+        match first_argument {
+            "ECHO" => {
+                if arguments.len() != 2 {
+                    "-ERR wrong number of arguments for command\r\n".to_string()
+                } else {
+                    format!("+{}\r\n", arguments[1])
+                }
             }
+            "PING" => {
+                "+PONG\r\n".to_string()
+            }
+            "SET" => {
+                self.data.insert(arguments[1].to_string(), arguments[2].to_string());
+                "+OK\r\n".to_string()
+            }
+            "GET" => {
+                let value = self.data.get(&arguments[1].to_string());
+                match value {
+                    None => "$-1\r\n".to_string(),
+                    Some(value) => format!("+{}\r\n", value)
+                }
+            }
+            _ => format!("-unknown command '{}'\r\n", first_argument)
         }
-        "PING" => {
-            "+PONG\r\n".to_string()
-        }
-        "SET" => {
-            data.insert(arguments[1].to_string(), arguments[2].to_string());
-            "+OK\r\n".to_string()
-        }
-        _ => format!("-unknown command '{}'\r\n", first_argument)
     }
 }
+
 
 fn parse_input(input: &str) -> Vec<&str> {
     let mut result = vec![];
@@ -68,7 +85,6 @@ fn parse_input(input: &str) -> Vec<&str> {
 }
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use super::*;
     #[test]
     fn parse_input_test() {
@@ -80,39 +96,57 @@ mod tests {
     }
     #[test]
     fn pong() {
-        let result = redis("*1\r\n$4\r\nPING", &mut HashMap::new());
+        let mut redis = Redis::new();
+
+        let result = redis.process("*1\r\n$4\r\nPING");
         assert_eq!(result, "+PONG\r\n");
     }
 
     #[test]
     fn set() {
-        let data = &mut HashMap::new();
-        let result = redis("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n", data);
+        let mut redis = Redis::new();
+        let result = redis.process("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n");
         assert_eq!(result, "+OK\r\n");
-        assert_eq!(data["Name"], "John");
+
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n");
+
+        assert_eq!(result, "+John\r\n");
+    }
+
+    #[test]
+    fn get_missing() {
+        let mut redis = Redis::new();
+
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n");
+
+        assert_eq!(result, "$-1\r\n");
     }
 
     #[test]
     fn echo() {
-        let result = redis("*2\r\n$4\r\nECHO\r\n$11\r\nHello World", &mut HashMap::new());
+        let mut redis = Redis::new();
+        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World");
         assert_eq!(result, "+Hello World\r\n");
     }
 
     #[test]
     fn echo_missing_arguments() {
-        let result = redis("*1\r\n$4\r\nECHO\r\n", &mut HashMap::new());
+        let mut redis = Redis::new();
+        let result = redis.process("*1\r\n$4\r\nECHO\r\n");
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn echo_too_many_arguments() {
-        let result = redis("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n", &mut HashMap::new());
+        let mut redis = Redis::new();
+        let result = redis.process("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n");
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn unknown_command() {
-        let result = redis("*1\r\n$4\r\nCIAO\r\n", &mut HashMap::new());
+        let mut redis = Redis::new();
+        let result = redis.process("*1\r\n$4\r\nCIAO\r\n");
         assert_eq!(result, "-unknown command 'CIAO'\r\n");
     }
 }
