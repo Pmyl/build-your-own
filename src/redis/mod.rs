@@ -1,10 +1,12 @@
+use build_your_own_macros::cli_options;
 use build_your_own_utils::my_own_error::MyOwnError;
 use std::collections::HashMap;
+use std::str::FromStr;
+use std::time::{Duration, Instant};
 use std::{
     io::{Read, Write},
     net::TcpListener,
 };
-use build_your_own_macros::cli_options;
 // https://codingchallenges.fyi/challenges/challenge-redis
 
 
@@ -13,7 +15,8 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", redis_config.port))?;
     println!("Listening on port {}", redis_config.port);
 
-    let mut redis = Redis::new();
+    let mut redis = Redis::default();
+    let redis_time_provider: Box<dyn TimeProvider> = Box::new(RedisTimeProvider);
 
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -29,12 +32,20 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
 
             let request = String::from_utf8_lossy(&buffer);
 
-            let response = redis.process(&request);
+            let response = redis.process(&request, &redis_time_provider);
             stream.write(response.as_bytes())?;
         }
     }
 
     Ok(())
+}
+
+struct RedisTimeProvider;
+
+impl TimeProvider for RedisTimeProvider {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 cli_options! {
@@ -45,17 +56,17 @@ cli_options! {
 }
 
 struct Redis {
-    data: HashMap<String, String>,
+    data: HashMap<String, (String, Option<Instant>)>,
 }
 
 impl Redis {
-    fn new() -> Self {
+    fn default() -> Self {
         Self {
             data: HashMap::new(),
         }
     }
 
-    fn process(&mut self, input: &str) -> String {
+    fn process(&mut self, input: &str, time_provider: &Box<dyn TimeProvider>) -> String {
         let arguments = parse_input(input);
 
         let first_argument = arguments[0];
@@ -70,15 +81,38 @@ impl Redis {
             }
             "PING" => "+PONG\r\n".to_string(),
             "SET" => {
-                self.data
-                    .insert(arguments[1].to_string(), arguments[2].to_string());
+                if arguments.len() > 3 {
+                    let expire = arguments[4];
+                    match u64::from_str(expire) {
+                        Ok(expire) => {
+                            self.data
+                                .insert(arguments[1].to_string(), (arguments[2].to_string(), Some(time_provider.now() + Duration::from_secs(expire))));
+                        }
+                        Err(_) => {
+                            todo!()
+                        }
+                    }
+                } else {
+                    self.data
+                        .insert(arguments[1].to_string(), (arguments[2].to_string(), None));
+                }
                 "+OK\r\n".to_string()
             }
             "GET" => {
                 let value = self.data.get(&arguments[1].to_string());
+
                 match value {
                     None => "$-1\r\n".to_string(),
-                    Some(value) => format!("+{}\r\n", value),
+                    Some(value) => {
+                        if value.1.is_some() {
+                            if value.1.unwrap() > time_provider.now() {
+                                return format!("+{}\r\n", value.0);
+                            } else {
+                                return "$-1\r\n".to_string();
+                            }
+                        }
+                        format!("+{}\r\n", value.0)
+                    }
                 }
             }
             _ => format!("-unknown command '{}'\r\n", first_argument),
@@ -95,12 +129,17 @@ fn parse_input(input: &str) -> Vec<&str> {
         }
     });
 
-    return result;
+    result
+}
+
+trait TimeProvider {
+    fn now(&self) -> Instant;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn parse_input_test() {
@@ -113,57 +152,93 @@ mod tests {
 
     #[test]
     fn pong() {
-        let mut redis = Redis::new();
+        let mut redis = Redis::default();
 
-        let result = redis.process("*1\r\n$4\r\nPING");
+        let result = redis.process("*1\r\n$4\r\nPING", &FakeTimeProvider::new_now());
         assert_eq!(result, "+PONG\r\n");
     }
 
     #[test]
     fn set() {
-        let mut redis = Redis::new();
-        let result = redis.process("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n");
+        let mut redis = Redis::default();
+        let result = redis.process("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n", &FakeTimeProvider::new_now());
         assert_eq!(result, "+OK\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n");
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &FakeTimeProvider::new_now());
 
         assert_eq!(result, "+John\r\n");
     }
 
+    struct FakeTimeProvider {
+        now: Instant,
+    }
+
+    impl FakeTimeProvider {}
+
+    impl FakeTimeProvider {
+        fn new_now() -> Box<dyn TimeProvider> {
+            Box::new(FakeTimeProvider { now: Instant::now() })
+        }
+
+        fn new(instant: Instant) -> Self {
+            FakeTimeProvider { now: instant }
+        }
+    }
+
+    impl TimeProvider for FakeTimeProvider {
+        fn now(&self) -> Instant {
+            self.now
+        }
+    }
+
+    #[test]
+    fn set_expire() {
+        let mut redis = Redis::default();
+        let instant = Instant::now();
+        let result = redis.process("*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n", &(Box::new(FakeTimeProvider::new(instant)) as Box<dyn TimeProvider>));
+        assert_eq!(result, "+OK\r\n");
+
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(Box::new(FakeTimeProvider::new(instant + Duration::from_secs(59))) as Box<dyn TimeProvider>));
+        assert_eq!(result, "+John\r\n");
+
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(Box::new(FakeTimeProvider::new(instant + Duration::from_secs(60))) as Box<dyn TimeProvider>));
+        assert_eq!(result, "$-1\r\n");
+    }
+
     #[test]
     fn get_missing() {
-        let mut redis = Redis::new();
+        let mut redis = Redis::default();
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n");
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &FakeTimeProvider::new_now());
 
         assert_eq!(result, "$-1\r\n");
     }
 
     #[test]
     fn echo() {
-        let mut redis = Redis::new();
-        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World");
+        let mut redis = Redis::default();
+        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World", &FakeTimeProvider::new_now());
         assert_eq!(result, "+Hello World\r\n");
     }
 
     #[test]
     fn echo_missing_arguments() {
-        let mut redis = Redis::new();
-        let result = redis.process("*1\r\n$4\r\nECHO\r\n");
+        let mut redis = Redis::default();
+        let result = redis.process("*1\r\n$4\r\nECHO\r\n", &FakeTimeProvider::new_now());
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn echo_too_many_arguments() {
-        let mut redis = Redis::new();
-        let result = redis.process("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n");
+        let mut redis = Redis::default();
+        let result = redis.process("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n", &FakeTimeProvider::new_now());
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn unknown_command() {
-        let mut redis = Redis::new();
-        let result = redis.process("*1\r\n$4\r\nCIAO\r\n");
+        let mut redis = Redis::default();
+        let result = redis.process("*1\r\n$4\r\nCIAO\r\n", &FakeTimeProvider::new_now());
         assert_eq!(result, "-unknown command 'CIAO'\r\n");
     }
 }
