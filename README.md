@@ -1,4 +1,8 @@
 # My own tools
+
+> *"What I cannot create, I do not understand."* \
+> -- *Richard Feynman*
+
 Project to learn by building my own version of existing tools/software.
 
 ## How to run

@@ -1,5 +1,6 @@
 use build_your_own_macros::cli_options;
 use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::thread_pool::ScopedThreadPool;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
@@ -19,8 +20,14 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let redis = Redis::default();
 
     thread::scope(|scope| {
+        let number_of_threads =
+            std::thread::available_parallelism().expect("Failed to get number of threads");
+        println!("Using {} threads", number_of_threads);
+
+        let thread_pool = ScopedThreadPool::new(number_of_threads.into(), scope);
+
         for stream in listener.incoming() {
-            scope.spawn(|| {
+            thread_pool.execute(|| {
                 let mut stream = stream.expect("Expect stream to be valid");
 
                 loop {
