@@ -4,13 +4,14 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
 };
-
+use build_your_own_macros::cli_options;
 // https://codingchallenges.fyi/challenges/challenge-redis
 
-pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
-    let port = 6379;
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;
-    println!("Listening on port {}", port);
+
+pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
+    let redis_config = RedisConfig::from_args(args)?;
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", redis_config.port))?;
+    println!("Listening on port {}", redis_config.port);
 
     let mut redis = Redis::new();
 
@@ -34,6 +35,13 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
     }
 
     Ok(())
+}
+
+cli_options! {
+    struct RedisConfig {
+        #[option(name = "-p", default = 6379)]
+        port: u16
+    }
 }
 
 struct Redis {
