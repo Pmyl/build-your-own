@@ -9,7 +9,7 @@ use std::{
 
 pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
     let port = 6379;
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;
     println!("Listening on port {}", port);
 
     let mut redis = Redis::new();
@@ -17,12 +17,20 @@ pub fn redis_cli(_args: &[&str]) -> Result<(), MyOwnError> {
     for stream in listener.incoming() {
         let mut stream = stream?;
 
-        let mut buffer = [0; 1024];
-        stream.read(&mut buffer)?;
-        let request = String::from_utf8_lossy(&buffer);
+        loop {
+            let mut buffer = [0; 1024];
+            let bytes_read = stream.read(&mut buffer)?;
 
-        let response = redis.process(&request);
-        stream.write(response.as_bytes())?;
+            // Check if the client closed the connection
+            if bytes_read == 0 {
+                break;
+            }
+
+            let request = String::from_utf8_lossy(&buffer);
+
+            let response = redis.process(&request);
+            stream.write(response.as_bytes())?;
+        }
     }
 
     Ok(())
@@ -38,7 +46,7 @@ impl Redis {
             data: HashMap::new(),
         }
     }
-    
+
     fn process(&mut self, input: &str) -> String {
         let arguments = parse_input(input);
 
@@ -85,7 +93,7 @@ fn parse_input(input: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn parse_input_test() {
         let result = parse_input("*1\r\n$4\r\nPING\r\n");
@@ -94,7 +102,7 @@ mod tests {
         let result = parse_input("*2\r\n$4\r\nECHO\r\n$11\r\nHello World");
         assert_eq!(result, vec!["ECHO", "Hello World"]);
     }
-    
+
     #[test]
     fn pong() {
         let mut redis = Redis::new();
