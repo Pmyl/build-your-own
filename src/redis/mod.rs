@@ -102,16 +102,14 @@ impl Redis {
                 let value = self.data.get(&arguments[1].to_string());
 
                 match value {
-                    None => "$-1\r\n".to_string(),
-                    Some(value) => {
-                        if value.1.is_some() {
-                            if value.1.unwrap() > time_provider.now() {
-                                return format!("+{}\r\n", value.0);
-                            } else {
-                                return "$-1\r\n".to_string();
-                            }
-                        }
-                        format!("+{}\r\n", value.0)
+                    Some((value, None)) => {
+                        format!("+{}\r\n", value)
+                    }
+                    Some((value, Some(exp))) if exp > &time_provider.now() => {
+                        format!("+{}\r\n", value)
+                    }
+                    _ => {
+                        "$-1\r\n".to_string()
                     }
                 }
             }
