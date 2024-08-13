@@ -16,7 +16,7 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     println!("Listening on port {}", redis_config.port);
 
     let mut redis = Redis::default();
-    let redis_time_provider: Box<dyn TimeProvider> = Box::new(RedisTimeProvider);
+    let redis_time_provider = RedisTimeProvider;
 
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -66,7 +66,7 @@ impl Redis {
         }
     }
 
-    fn process(&mut self, input: &str, time_provider: &Box<dyn TimeProvider>) -> String {
+    fn process(&mut self, input: &str, time_provider: &impl TimeProvider) -> String {
         let arguments = parse_input(input);
 
         let first_argument = arguments[0];
@@ -174,8 +174,8 @@ mod tests {
     impl FakeTimeProvider {}
 
     impl FakeTimeProvider {
-        fn new_now() -> Box<dyn TimeProvider> {
-            Box::new(FakeTimeProvider { now: Instant::now() })
+        fn new_now() -> FakeTimeProvider {
+            FakeTimeProvider { now: Instant::now() }
         }
 
         fn new(instant: Instant) -> Self {
@@ -193,13 +193,13 @@ mod tests {
     fn set_expire() {
         let mut redis = Redis::default();
         let instant = Instant::now();
-        let result = redis.process("*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n", &(Box::new(FakeTimeProvider::new(instant)) as Box<dyn TimeProvider>));
+        let result = redis.process("*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n", &(FakeTimeProvider::new(instant)));
         assert_eq!(result, "+OK\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(Box::new(FakeTimeProvider::new(instant + Duration::from_secs(59))) as Box<dyn TimeProvider>));
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(FakeTimeProvider::new(instant + Duration::from_secs(59))));
         assert_eq!(result, "+John\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(Box::new(FakeTimeProvider::new(instant + Duration::from_secs(60))) as Box<dyn TimeProvider>));
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(FakeTimeProvider::new(instant + Duration::from_secs(60))));
         assert_eq!(result, "$-1\r\n");
     }
 
