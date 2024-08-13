@@ -9,14 +9,12 @@ use std::{
 };
 // https://codingchallenges.fyi/challenges/challenge-redis
 
-
 pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let redis_config = RedisConfig::from_args(args)?;
     let listener = TcpListener::bind(format!("127.0.0.1:{}", redis_config.port))?;
     println!("Listening on port {}", redis_config.port);
 
     let mut redis = Redis::default();
-    let redis_time_provider = RedisTimeProvider;
 
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -25,14 +23,13 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
             let mut buffer = [0; 1024];
             let bytes_read = stream.read(&mut buffer)?;
 
-            // Check if the client closed the connection
             if bytes_read == 0 {
                 break;
             }
 
             let request = String::from_utf8_lossy(&buffer);
 
-            let response = redis.process(&request, &redis_time_provider);
+            let response = redis.process(&request, &Instant::now());
             stream.write(response.as_bytes())?;
         }
     }
@@ -40,11 +37,9 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     Ok(())
 }
 
-struct RedisTimeProvider;
-
-impl TimeProvider for RedisTimeProvider {
+impl TimeProvider for Instant {
     fn now(&self) -> Instant {
-        Instant::now()
+        *self
     }
 }
 
@@ -152,54 +147,32 @@ mod tests {
     fn pong() {
         let mut redis = Redis::default();
 
-        let result = redis.process("*1\r\n$4\r\nPING", &FakeTimeProvider::new_now());
+        let result = redis.process("*1\r\n$4\r\nPING", &Instant::now());
         assert_eq!(result, "+PONG\r\n");
     }
 
     #[test]
     fn set() {
         let mut redis = Redis::default();
-        let result = redis.process("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n", &Instant::now());
         assert_eq!(result, "+OK\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &Instant::now());
 
         assert_eq!(result, "+John\r\n");
-    }
-
-    struct FakeTimeProvider {
-        now: Instant,
-    }
-
-    impl FakeTimeProvider {}
-
-    impl FakeTimeProvider {
-        fn new_now() -> FakeTimeProvider {
-            FakeTimeProvider { now: Instant::now() }
-        }
-
-        fn new(instant: Instant) -> Self {
-            FakeTimeProvider { now: instant }
-        }
-    }
-
-    impl TimeProvider for FakeTimeProvider {
-        fn now(&self) -> Instant {
-            self.now
-        }
     }
 
     #[test]
     fn set_expire() {
         let mut redis = Redis::default();
         let instant = Instant::now();
-        let result = redis.process("*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n", &(FakeTimeProvider::new(instant)));
+        let result = redis.process("*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n", &instant);
         assert_eq!(result, "+OK\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(FakeTimeProvider::new(instant + Duration::from_secs(59))));
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(instant + Duration::from_secs(59)));
         assert_eq!(result, "+John\r\n");
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(FakeTimeProvider::new(instant + Duration::from_secs(60))));
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &(instant + Duration::from_secs(60)));
         assert_eq!(result, "$-1\r\n");
     }
 
@@ -207,7 +180,7 @@ mod tests {
     fn get_missing() {
         let mut redis = Redis::default();
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &Instant::now());
 
         assert_eq!(result, "$-1\r\n");
     }
@@ -215,28 +188,28 @@ mod tests {
     #[test]
     fn echo() {
         let mut redis = Redis::default();
-        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World", &FakeTimeProvider::new_now());
+        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World", &Instant::now());
         assert_eq!(result, "+Hello World\r\n");
     }
 
     #[test]
     fn echo_missing_arguments() {
         let mut redis = Redis::default();
-        let result = redis.process("*1\r\n$4\r\nECHO\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*1\r\n$4\r\nECHO\r\n", &Instant::now());
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn echo_too_many_arguments() {
         let mut redis = Redis::default();
-        let result = redis.process("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n", &Instant::now());
         assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn unknown_command() {
         let mut redis = Redis::default();
-        let result = redis.process("*1\r\n$4\r\nCIAO\r\n", &FakeTimeProvider::new_now());
+        let result = redis.process("*1\r\n$4\r\nCIAO\r\n", &Instant::now());
         assert_eq!(result, "-unknown command 'CIAO'\r\n");
     }
 }
