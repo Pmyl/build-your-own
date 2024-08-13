@@ -2,7 +2,7 @@ use build_your_own_macros::cli_options;
 use build_your_own_utils::my_own_error::MyOwnError;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{
@@ -16,36 +16,32 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", redis_config.port))?;
     println!("Listening on port {}", redis_config.port);
 
-    let redis = Arc::new(Mutex::new(Redis::default()));
+    let redis = Redis::default();
 
-    for stream in listener.incoming() {
-        let redis = redis.clone();
+    thread::scope(|scope| {
+        for stream in listener.incoming() {
+            scope.spawn(|| {
+                let mut stream = stream.expect("Expect stream to be valid");
 
-        thread::spawn(move || {
-            let mut stream = stream.expect("Expect stream to be valid");
+                loop {
+                    let mut buffer = [0; 1024];
+                    let bytes_read = stream
+                        .read(&mut buffer)
+                        .expect("Failed to read from stream");
 
-            loop {
-                let mut buffer = [0; 1024];
-                let bytes_read = stream
-                    .read(&mut buffer)
-                    .expect("Failed to read from stream");
+                    if bytes_read == 0 {
+                        break;
+                    }
 
-                if bytes_read == 0 {
-                    break;
+                    let request = String::from_utf8_lossy(&buffer);
+
+                    redis
+                        .process(&request, &mut stream, &Instant::now())
+                        .expect("Failed to process request");
                 }
-
-                let request = String::from_utf8_lossy(&buffer);
-
-                let mut redis_lock = redis.lock().unwrap();
-                let response = redis_lock.process(&request, &Instant::now());
-                drop(redis_lock);
-
-                stream
-                    .write(response.as_bytes())
-                    .expect("Failed to write to stream");
-            }
-        });
-    }
+            });
+        }
+    });
 
     Ok(())
 }
@@ -64,36 +60,41 @@ cli_options! {
 }
 
 struct Redis {
-    data: HashMap<String, (String, Option<Instant>)>,
+    data: Mutex<HashMap<String, (String, Option<Instant>)>>,
 }
 
 impl Redis {
     fn default() -> Self {
         Self {
-            data: HashMap::new(),
+            data: Mutex::new(HashMap::new()),
         }
     }
 
-    fn process(&mut self, input: &str, time_provider: &impl TimeProvider) -> String {
+    fn process(
+        &self,
+        input: &str,
+        mut output: impl Write,
+        time_provider: &impl TimeProvider,
+    ) -> Result<(), MyOwnError> {
         let arguments = parse_input(input);
 
         let first_argument = arguments[0];
 
-        match first_argument {
+        let response: &[u8] = match first_argument {
             "ECHO" => {
                 if arguments.len() != 2 {
-                    "-ERR wrong number of arguments for command\r\n".to_string()
+                    b"-ERR wrong number of arguments for command\r\n"
                 } else {
-                    format!("+{}\r\n", arguments[1])
+                    &format!("+{}\r\n", arguments[1]).into_bytes()
                 }
             }
-            "PING" => "+PONG\r\n".to_string(),
+            "PING" => b"+PONG\r\n",
             "SET" => {
                 if arguments.len() > 3 {
                     let expire = arguments[4];
                     match u64::from_str(expire) {
                         Ok(expire) => {
-                            self.data.insert(
+                            self.data.lock().unwrap().insert(
                                 arguments[1].to_string(),
                                 (
                                     arguments[2].to_string(),
@@ -107,25 +108,31 @@ impl Redis {
                     }
                 } else {
                     self.data
+                        .lock()
+                        .unwrap()
                         .insert(arguments[1].to_string(), (arguments[2].to_string(), None));
                 }
-                "+OK\r\n".to_string()
+
+                b"+OK\r\n"
             }
             "GET" => {
-                let value = self.data.get(&arguments[1].to_string());
+                let hash_map = self.data.lock().unwrap();
+                let value = hash_map.get(&arguments[1].to_string());
 
                 match value {
-                    Some((value, None)) => {
-                        format!("+{}\r\n", value)
-                    }
+                    Some((value, None)) => &format!("+{}\r\n", value).into_bytes(),
                     Some((value, Some(exp))) if exp > &time_provider.now() => {
-                        format!("+{}\r\n", value)
+                        &format!("+{}\r\n", value).into_bytes()
                     }
-                    _ => "$-1\r\n".to_string(),
+                    _ => b"$-1\r\n",
                 }
             }
-            _ => format!("-unknown command '{}'\r\n", first_argument),
-        }
+            _ => &format!("-unknown command '{}'\r\n", first_argument).into_bytes(),
+        };
+
+        output.write_all(response)?;
+
+        Ok(())
     }
 }
 
@@ -161,86 +168,137 @@ mod tests {
 
     #[test]
     fn pong() {
-        let mut redis = Redis::default();
+        let redis = Redis::default();
+        let mut output = Vec::new();
 
-        let result = redis.process("*1\r\n$4\r\nPING", &Instant::now());
-        assert_eq!(result, "+PONG\r\n");
+        redis
+            .process("*1\r\n$4\r\nPING", &mut output, &Instant::now())
+            .expect("Failed to process");
+        assert_eq!(output, b"+PONG\r\n");
     }
 
     #[test]
     fn set() {
-        let mut redis = Redis::default();
-        let result = redis.process(
-            "*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n",
-            &Instant::now(),
-        );
-        assert_eq!(result, "+OK\r\n");
+        let redis = Redis::default();
+        let mut output = Vec::new();
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &Instant::now());
+        redis
+            .process(
+                "*3\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n",
+                &mut output,
+                &Instant::now(),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"+OK\r\n");
 
-        assert_eq!(result, "+John\r\n");
+        let mut output = Vec::new();
+        redis
+            .process(
+                "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
+                &mut output,
+                &Instant::now(),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"+John\r\n");
     }
 
     #[test]
     fn set_expire() {
-        let mut redis = Redis::default();
+        let redis = Redis::default();
+        let mut output = Vec::new();
         let instant = Instant::now();
-        let result = redis.process(
-            "*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n",
-            &instant,
-        );
-        assert_eq!(result, "+OK\r\n");
 
-        let result = redis.process(
-            "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
-            &(instant + Duration::from_secs(59)),
-        );
-        assert_eq!(result, "+John\r\n");
+        redis
+            .process(
+                "*5\r\n$3\r\nSET\r\n$4\r\nName\r\n$4\r\nJohn\r\n$2\r\nEX\r\n$2\r\n60\r\n",
+                &mut output,
+                &instant,
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"+OK\r\n");
 
-        let result = redis.process(
-            "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
-            &(instant + Duration::from_secs(60)),
-        );
-        assert_eq!(result, "$-1\r\n");
+        let mut output = Vec::new();
+        redis
+            .process(
+                "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
+                &mut output,
+                &(instant + Duration::from_secs(59)),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"+John\r\n");
+
+        let mut output = Vec::new();
+        redis
+            .process(
+                "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
+                &mut output,
+                &(instant + Duration::from_secs(60)),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"$-1\r\n");
     }
 
     #[test]
     fn get_missing() {
-        let mut redis = Redis::default();
+        let redis = Redis::default();
+        let mut output = Vec::new();
 
-        let result = redis.process("*2\r\n$3\r\nGET\r\n$4\r\nName\r\n", &Instant::now());
+        redis
+            .process(
+                "*2\r\n$3\r\nGET\r\n$4\r\nName\r\n",
+                &mut output,
+                &Instant::now(),
+            )
+            .expect("Failed to process");
 
-        assert_eq!(result, "$-1\r\n");
+        assert_eq!(output, b"$-1\r\n");
     }
 
     #[test]
     fn echo() {
-        let mut redis = Redis::default();
-        let result = redis.process("*2\r\n$4\r\nECHO\r\n$11\r\nHello World", &Instant::now());
-        assert_eq!(result, "+Hello World\r\n");
+        let redis = Redis::default();
+        let mut output = Vec::new();
+        redis
+            .process(
+                "*2\r\n$4\r\nECHO\r\n$11\r\nHello World",
+                &mut output,
+                &Instant::now(),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"+Hello World\r\n");
     }
 
     #[test]
     fn echo_missing_arguments() {
-        let mut redis = Redis::default();
-        let result = redis.process("*1\r\n$4\r\nECHO\r\n", &Instant::now());
-        assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
+        let redis = Redis::default();
+        let mut output = Vec::new();
+        redis
+            .process("*1\r\n$4\r\nECHO\r\n", &mut output, &Instant::now())
+            .expect("Failed to process");
+        assert_eq!(output, b"-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn echo_too_many_arguments() {
-        let mut redis = Redis::default();
-        let result = redis.process(
-            "*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n",
-            &Instant::now(),
-        );
-        assert_eq!(result, "-ERR wrong number of arguments for command\r\n");
+        let redis = Redis::default();
+        let mut output = Vec::new();
+        redis
+            .process(
+                "*3\r\n$4\r\nECHO\r\n$1\r\nN\r\n$1\r\nB\r\n",
+                &mut output,
+                &Instant::now(),
+            )
+            .expect("Failed to process");
+        assert_eq!(output, b"-ERR wrong number of arguments for command\r\n");
     }
 
     #[test]
     fn unknown_command() {
-        let mut redis = Redis::default();
-        let result = redis.process("*1\r\n$4\r\nCIAO\r\n", &Instant::now());
-        assert_eq!(result, "-unknown command 'CIAO'\r\n");
+        let redis = Redis::default();
+        let mut output = Vec::new();
+        redis
+            .process("*1\r\n$4\r\nCIAO\r\n", &mut output, &Instant::now())
+            .expect("Failed to process");
+        assert_eq!(output, b"-unknown command 'CIAO'\r\n");
     }
 }
