@@ -4,7 +4,7 @@ use build_your_own_utils::thread_pool::ScopedThreadPool;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::thread;
+use std::thread::{self, available_parallelism};
 use std::time::{Duration, Instant};
 use std::{
     io::{Read, Write},
@@ -20,8 +20,7 @@ pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let redis = Redis::default();
 
     thread::scope(|scope| {
-        let number_of_threads =
-            std::thread::available_parallelism().expect("Failed to get number of threads");
+        let number_of_threads = available_parallelism().expect("Failed to get number of threads");
         println!("Using {} threads", number_of_threads);
 
         let thread_pool = ScopedThreadPool::new(number_of_threads.into(), scope);
