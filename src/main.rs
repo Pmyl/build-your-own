@@ -37,7 +37,7 @@ tools! {
         Cut,
         #[tool(
             command = "redis",
-            description = "#WIP# myown redis",
+            description = "myown redis [-p]",
             function = redis::redis_cli
         )]
         Redis,
