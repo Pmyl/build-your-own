@@ -18,18 +18,32 @@ pub enum MyOwnError {
 }
 
 pub trait DescribableError<T, E: Error> {
-    fn describe_error<TDescription: Into<String>>(
+    fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
+    ) -> Result<T, MyOwnError>;
+
+    fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
+        self,
+        with_description: F,
     ) -> Result<T, MyOwnError>;
 }
 
 impl<'a, T, E: Error + 'static> DescribableError<T, E> for Result<T, E> {
-    fn describe_error<TDescription: Into<String>>(
+    fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
     ) -> Result<T, MyOwnError> {
         self.map_err(|e| MyOwnError::ActualErrorWithDescription(e.into(), description.into()))
+    }
+
+    fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
+        self,
+        with_description: F,
+    ) -> Result<T, MyOwnError> {
+        self.map_err(|e| {
+            MyOwnError::ActualErrorWithDescription(e.into(), with_description().into())
+        })
     }
 }
 
