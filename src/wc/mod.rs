@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
 
 // https://codingchallenges.fyi/challenges/challenge-wc
 
@@ -13,8 +13,8 @@ fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> Resul
     let cli_options = WcCliOptions::from_args(args)?;
 
     let result = if let Some(filepath) = cli_options.filepath {
-        let file =
-            std::fs::File::open(filepath).inspect_err(|_| eprintln!("no {} file", filepath))?;
+        let file = std::fs::File::open(filepath)
+            .with_error_description(|| format!("Trying to open file {:?}", filepath))?;
 
         wc(file)?
     } else {

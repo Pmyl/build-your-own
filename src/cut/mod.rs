@@ -1,7 +1,7 @@
 use std::io::{stdin, stdout, BufRead, BufReader, Read, Write};
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
 
 // https://codingchallenges.fyi/challenges/challenge-cut
 
@@ -13,8 +13,8 @@ fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(
     let options = CutCliOptions::from_args(args)?;
 
     if let Some(input_file) = options.input_file {
-        let file =
-            std::fs::File::open(input_file).inspect_err(|_| eprintln!("no {} file", input_file))?;
+        let file = std::fs::File::open(input_file)
+            .with_error_description(|| format!("Trying to open file {:?}", input_file))?;
 
         cut(options.options, file, output)
     } else {

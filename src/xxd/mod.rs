@@ -4,7 +4,7 @@ use std::{
 };
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
 
 // https://codingchallenges.fyi/challenges/challenge-xxd
 
@@ -12,7 +12,10 @@ pub fn xxd_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let options = XxdCliOptions::from_args(args)?;
 
     if let Some(input_file) = options.input_file {
-        xxd_cli_impl(options.options, File::open(input_file)?, stdout())
+        let file = File::open(input_file)
+            .with_error_description(|| format!("Trying to open file {:?}", input_file))?;
+
+        xxd_cli_impl(options.options, file, stdout())
     } else {
         xxd_cli_impl(options.options, stdin(), stdout())
     }
