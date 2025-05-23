@@ -1,5 +1,5 @@
 [workspace]
-members = ["macros", "utils"]
+members = ["macros", "utils", "tools/sl"]
 
 [package]
 name = "build-your-own"
@@ -9,3 +9,4 @@ edition = "2021"
 [dependencies]
 build-your-own-macros = { path = "macros" }
 build-your-own-utils = { path = "utils" }
+sl = { path = "tools/sl" }

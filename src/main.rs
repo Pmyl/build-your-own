@@ -47,5 +47,11 @@ tools! {
             function = xxd::xxd_cli
         )]
         Xxd,
+        #[tool(
+            command = "sl",
+            description = "myown sl",
+            function = sl::sl_cli
+        )]
+        Sl,
     }
 }
