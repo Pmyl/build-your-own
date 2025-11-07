@@ -9,3 +9,4 @@ crate-type = ["lib"]
 [dependencies]
 build-your-own-utils = { path = "../../utils" }
 build-your-own-macros = { path = "../../macros" }
+crossterm = "0.29.0"
