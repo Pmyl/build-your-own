@@ -16,12 +16,11 @@ macro_rules! tools {
         }
 
         impl Tool {
-            fn from_str(s: Option<&str>) -> Option<Self> {
+            fn from_str(s: &str) -> Option<Self> {
                 match s {
                     $(
-                        Some($command) => Some(Tool::$variant),
+                        $command => Some(Tool::$variant),
                     )+
-                    Some(other) => panic!("Tool [{}] not configured", other),
                     _ => None,
                 }
             }
@@ -45,20 +44,28 @@ macro_rules! tools {
             // parameters structure has to be:
             // 0: tool name
             // 1..n: tool parameters
-            let tool = Tool::from_str(args.get(0).map(|s| *s));
-
-            match tool {
-                Some(tool) => match (match tool {
-                    $(
-                        Tool::$variant => $function(&args.iter().skip(1).map(|s| &**s).collect::<Vec<&str>>()),
-                    )+
-                }) {
-                    Err(MyOwnError::ActualError(e)) => eprint!("{}", e),
-                    Err(MyOwnError::ActualErrorWithDescription(e, description)) => eprint!("{}: {}", description, e),
-                    _ => (),
-                },
-                None => Tool::list(),
-            }
+            if let Some(tool_name) = args.get(0).map(|s| *s) {
+                let tool = Tool::from_str(tool_name);
+                match tool {
+                    Some(tool) => match (match tool {
+                        $(
+                            Tool::$variant => $function(&args.iter().skip(1).map(|s| &**s).collect::<Vec<&str>>()),
+                        )+
+                    }) {
+                        Err(MyOwnError::ActualError(e)) => eprint!("{}", e),
+                        Err(MyOwnError::ActualErrorWithDescription(e, description)) => eprint!("{}: {}", description, e),
+                        _ => (),
+                    },
+                    _ => {
+                        eprintln!("!!!!!!!!!!{}!!!!!!!!!!!!!!!!!!!!", "!".repeat(tool_name.len()));
+                        eprintln!("!!! Tool [{}] not configured !!!", tool_name);
+                        eprintln!("!!!!!!!!!!{}!!!!!!!!!!!!!!!!!!!!\n", "!".repeat(tool_name.len()));
+                        Tool::list()
+                    },
+                }
+            } else {
+                Tool::list()
+            };
         }
     };
 }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["macros", "utils", "tools/sl"]
+members = ["macros", "utils", "tools/sl", "tools/timer"]
 
 [package]
 name = "build-your-own"
@@ -10,3 +10,4 @@ edition = "2021"
 build-your-own-macros = { path = "macros" }
 build-your-own-utils = { path = "utils" }
 sl = { path = "tools/sl" }
+timer = { path = "tools/timer" }

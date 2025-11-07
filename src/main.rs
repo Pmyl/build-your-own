@@ -53,5 +53,11 @@ tools! {
             function = sl::sl_cli
         )]
         Sl,
+        #[tool(
+            command = "timer",
+            description = "myown timer",
+            function = timer::timer_cli
+        )]
+        Timer,
     }
 }
