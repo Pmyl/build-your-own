@@ -55,7 +55,7 @@ tools! {
         Sl,
         #[tool(
             command = "timer",
-            description = "myown timer",
+            description = "myown timer [time | default to seconds] e.g. TIMER: myown timer 10s STOPWATCH: myown timer",
             function = timer::timer_cli
         )]
         Timer,
