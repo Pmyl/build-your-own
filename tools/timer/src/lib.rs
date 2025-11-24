@@ -118,7 +118,7 @@ fn start_timer(mut output: impl Write, time: Duration) -> Result<(), MyOwnError>
             }
         }
     }
-    execute!(output, RestorePosition, Print("End!"))?;
+    execute!(output, Print("\r\nEnd!"))?;
     terminal::disable_raw_mode()?;
     Ok(())
 }

@@ -1,0 +1,11 @@
+[package]
+name = "install"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+build-your-own-utils = { path = "../../utils" }
+build-your-own-macros = { path = "../../macros" }

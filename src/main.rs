@@ -59,5 +59,11 @@ tools! {
             function = timer::timer_cli
         )]
         Timer,
+        #[tool(
+            command = "install",
+            description = "myown install [source] [application] e.g. myown install apt curl",
+            function = install::install_cli
+        )]
+        Install,
     }
 }

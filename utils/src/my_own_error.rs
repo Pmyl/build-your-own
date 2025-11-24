@@ -15,9 +15,10 @@ pub enum MyOwnError {
     EarlyExit,
     ActualError(Box<dyn Error>),
     ActualErrorWithDescription(Box<dyn Error>, String),
+    MyOwnErrorWithDescription(Box<MyOwnError>, String),
 }
 
-pub trait DescribableError<T, E: Error> {
+pub trait DescribableError<T, E> {
     fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
@@ -43,6 +44,30 @@ impl<'a, T, E: Error + 'static> DescribableError<T, E> for Result<T, E> {
     ) -> Result<T, MyOwnError> {
         self.map_err(|e| {
             MyOwnError::ActualErrorWithDescription(e.into(), with_description().into())
+        })
+    }
+}
+
+impl<'a, T> DescribableError<T, MyOwnError> for Result<T, MyOwnError> {
+    fn error_description<TDescription: Into<String>>(
+        self,
+        description: TDescription,
+    ) -> Result<T, MyOwnError> {
+        self.map_err(|e| match e {
+            MyOwnError::EarlyExit => e,
+            err @ _ => MyOwnError::MyOwnErrorWithDescription(Box::new(err), description.into()),
+        })
+    }
+
+    fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
+        self,
+        with_description: F,
+    ) -> Result<T, MyOwnError> {
+        self.map_err(|e| match e {
+            MyOwnError::EarlyExit => e,
+            err @ _ => {
+                MyOwnError::MyOwnErrorWithDescription(Box::new(err), with_description().into())
+            }
         })
     }
 }

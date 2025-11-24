@@ -1,0 +1,8 @@
+[package]
+name = "build-your-own-macros-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+build-your-own-macros = { path = "../macros" }
+build-your-own-utils = { path = "../utils" }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["macros", "utils", "tools/sl", "tools/timer"]
+members = ["macros", "utils", "tools/sl", "tools/timer", "tools/install"]
 
 [package]
 name = "build-your-own"
@@ -11,3 +11,7 @@ build-your-own-macros = { path = "macros" }
 build-your-own-utils = { path = "utils" }
 sl = { path = "tools/sl" }
 timer = { path = "tools/timer" }
+install = { path = "tools/install" }
+
+[dev-dependencies]
+build-your-own-macros-tests = { path = "macros_tests" }

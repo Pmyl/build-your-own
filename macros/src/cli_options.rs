@@ -33,7 +33,7 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
         .map(|s| {
             let name = &s.name;
             quote! {
-                if options.#name.update_arg(&arg, &mut args)? {
+                if options.#name.update_arg(&arg, &mut args, &mut nameless_option_index)? {
                     continue;
                 }
             }
@@ -41,7 +41,7 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
         .collect::<Vec<_>>();
 
     update_arg_statements.push(quote! {
-        if options.update_arg(&arg, &mut args)? {
+        if options.update_arg(&arg, &mut args, &mut nameless_option_index)? {
             continue;
         }
     });
@@ -52,6 +52,7 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
                 let mut options = <#name as core::default::Default>::default();
 
                 let mut args = args.iter();
+                let mut nameless_option_index = 0;
                 while let Some(arg) = args.next() {
                     #(#update_arg_statements)*
                     return Err(build_your_own_utils::my_own_error::MyOwnError::ActualError(format!("unknown argument: {}", arg).into()));
@@ -153,7 +154,8 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
     let lifetime_generics = lifetime.as_ref().map(|lifetime| quote! { <#lifetime> });
 
     let mut option_parsers = Vec::new();
-    let mut default_option_parser = None;
+    let mut nameless_option_parsers = vec![];
+    let mut nameless_option_index: usize = 0;
 
     strct.fields.iter().for_each(|f| {
         let field_name = &f.0.name;
@@ -186,16 +188,16 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
                 })
             }
             (None, false) => {
-                if default_option_parser.is_some() {
-                    panic!("multiple fields without option name are not supported");
-                }
-
                 let parse_arg = parse_arg(&f);
-                default_option_parser = Some(quote! {
-                    let arg_value = arg;
-                    self.#field_name = #parse_arg;
-                    Ok(true)
+                nameless_option_parsers.push(quote! {
+                    if *nameless_option_index == #nameless_option_index {
+                        let arg_value = arg;
+                        self.#field_name = #parse_arg;
+                        *nameless_option_index += 1;
+                        return Ok(true);
+                    }
                 });
+                nameless_option_index += 1;
             }
             (None, true) => panic!("bool fields must have option name"),
         }
@@ -216,17 +218,14 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
         });
     });
 
-    let default_option_parser = default_option_parser.unwrap_or_else(|| {
-        quote! {
-            Ok(false)
-        }
-    });
+    nameless_option_parsers.push(quote! { Ok(false) });
 
     quote! {
         impl #lifetime_generics #name #lifetime_generics {
-            fn update_arg(&mut self, arg: &#lifetime str, args: &mut core::slice::Iter<&#lifetime str>) -> Result<bool, build_your_own_utils::my_own_error::MyOwnError> {
+            fn update_arg(&mut self, arg: &#lifetime str, args: &mut core::slice::Iter<&#lifetime str>, nameless_option_index: &mut usize) -> Result<bool, build_your_own_utils::my_own_error::MyOwnError> {
+                use build_your_own_utils::my_own_error::DescribableError;
                 #(#option_parsers)*
-                #default_option_parser
+                #(#nameless_option_parsers)*
             }
         }
     }
@@ -251,8 +250,7 @@ fn parse_arg(f: &(MyOwnStructComponentField, MyOwnFieldAttribute)) -> proc_macro
         quote! {
             .map(|arg| arg.parse::<#ty>())
             .collect::<Result<Vec<_>, _>>()
-            // TODO: add option to describe parsing error
-            .map_err(|e| build_your_own_utils::my_own_error::MyOwnError::ActualErrorWithDescription(e.into(), format!("error parsing {}", arg).into()))?
+            .with_error_description(|| format!("error parsing {}", arg))?
         }
     } else {
         quote! {
