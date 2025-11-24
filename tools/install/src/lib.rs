@@ -157,6 +157,7 @@ struct Installer;
 impl Installer {
     fn install_all(self) -> Result<(), MyOwnError> {
         let all_applications = Applications::read()?;
+        println!("# Applications list from [{}]", applications_file());
         ask_permission(&format!(
             "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
             all_applications.0.len()
@@ -176,6 +177,7 @@ impl Installer {
 
     fn uninstall_all(self) -> Result<(), MyOwnError> {
         let mut all_applications = Applications::read()?;
+        println!("# Applications list from [{}]", applications_file());
         ask_permission(&format!(
             "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
             all_applications.0.len()
