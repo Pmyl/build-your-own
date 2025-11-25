@@ -1,9 +1,10 @@
+mod sources;
+
 use std::{
     borrow::Cow,
     fmt::Display,
     fs::OpenOptions,
-    io::{Read, Write, stderr, stdin, stdout},
-    process::Command,
+    io::{Read, Write, stdin},
     str::FromStr,
 };
 
@@ -13,9 +14,16 @@ use build_your_own_utils::{
     my_own_error::{DescribableError, MyOwnError},
 };
 
+use crate::sources::{SourceT, apt::Apt, brew::Brew, cargo::Cargo, npm::Npm};
+
 // My idea!
 pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let options = InstallOptions::from_args(args)?;
+
+    if options.show_path {
+        println!("{}", applications_file());
+        return Ok(());
+    }
 
     let application = match (options.source, options.application) {
         (Some(source), Some(application)) => Some(Application {
@@ -25,18 +33,26 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         _ => None,
     };
 
-    let installer = Installer;
+    let applications = if options.applications_file_from_stdin {
+        Applications::from_reader(stdin())
+    } else {
+        Applications::from_file()
+    }?;
     match (application, options.all, options.uninstall) {
-        (Some(application), false, false) => installer.install(application),
-        (Some(application), false, true) => installer.uninstall(application),
-        (None, true, false) => installer.install_all(),
-        (None, true, true) => installer.uninstall_all(),
+        (Some(application), false, false) => Installer(applications).install(application),
+        (Some(application), false, true) => Installer(applications).uninstall(application),
+        (None, true, false) => Installer(applications).install_all(),
+        (None, true, true) => Installer(applications).uninstall_all(),
         _ => {
-            println!("Usage: myown install [-u] [-a] [source] [application]");
+            println!("Usage: myown install [-p] [-u] [-a] [source] [application]");
+            println!("  -p             Print path of file with list of applications");
+            println!("  -u             Uninstall mode");
+            println!("  -a             Install/Uninstall all applications presents in the list");
+            println!("  -i             Read list of applications from stdin");
+            println!();
             println!("Example install: myown install npm tailwindcss");
             println!("Example uninstall: myown install -u npm tailwindcss");
             println!();
-            let applications = Applications::read()?;
             if applications.0.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
                 for app in applications.0 {
@@ -50,124 +66,24 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
     }
 }
 
-fn install_with_apt(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("apt")
-        .args(&vec!["install", application])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
+struct Installer<'a>(Applications<'a>);
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't install".into()))
-    }
-}
-
-fn install_with_npm(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("npm")
-        .args(&vec!["install", application, "-g"])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't install".into()))
-    }
-}
-
-fn install_with_cargo(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("cargo")
-        .args(&vec!["install", application])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't install".into()))
-    }
-}
-
-fn install_with_brew(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("brew")
-        .args(&vec!["install", application])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't install".into()))
-    }
-}
-
-fn uninstall_with_npm(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("npm")
-        .args(&vec!["uninstall", application, "-g"])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't uninstall".into()))
-    }
-}
-
-fn uninstall_with_apt(_application: &str) -> Result<(), MyOwnError> {
-    todo!("Uninstall with apt is hard, I'll do it later")
-}
-
-fn uninstall_with_cargo(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("cargo")
-        .args(&vec!["uninstall", application])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't uninstall".into()))
-    }
-}
-
-fn uninstall_with_brew(application: &str) -> Result<(), MyOwnError> {
-    let status = Command::new("brew")
-        .args(&vec!["uninstall", application])
-        .stdout(stdout())
-        .stderr(stderr())
-        .status()?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(MyOwnError::ActualError("# Couldn't uninstall".into()))
-    }
-}
-
-struct Installer;
-
-impl Installer {
+impl<'a> Installer<'a> {
     fn install_all(self) -> Result<(), MyOwnError> {
-        let all_applications = Applications::read()?;
         println!("# Applications list from [{}]", applications_file());
         ask_permission(&format!(
             "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
-            all_applications.0.len()
+            self.0.0.len()
         ))?;
 
         println!("## Ready to install all applications");
 
-        for application in all_applications.0 {
+        for application in self.0.0 {
             println!("## Installing {}", application.application);
-            install_through_source(&application.source, application.application.as_ref())?;
+            application
+                .source
+                .manager()
+                .install(&application.application)?;
         }
 
         println!("## All applications installed");
@@ -175,34 +91,35 @@ impl Installer {
         Ok(())
     }
 
-    fn uninstall_all(self) -> Result<(), MyOwnError> {
-        let mut all_applications = Applications::read()?;
+    fn uninstall_all(mut self) -> Result<(), MyOwnError> {
         println!("# Applications list from [{}]", applications_file());
         ask_permission(&format!(
             "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
-            all_applications.0.len()
+            self.0.0.len()
         ))?;
 
         println!("## Ready to uninstall all applications");
 
-        for application in &all_applications.0 {
-            uninstall_through_source(&application.source, application.application.as_ref())?;
+        for application in &self.0.0 {
+            application
+                .source
+                .manager()
+                .uninstall(&application.application)?;
         }
 
         println!("## All applications uninstalled");
 
-        all_applications.remove_all()?;
+        self.0.remove_all()?;
 
         println!("## Application removed from list");
 
         Ok(())
     }
 
-    fn install<'a>(self, application: Application<'a>) -> Result<(), MyOwnError> {
-        let mut all_applications = Applications::read()?;
-
-        let already_installed =
-            all_applications.is_already_installed(&application.source, &application.application);
+    fn install(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+        let already_installed = self
+            .0
+            .is_already_installed(&application.source, &application.application);
 
         if let Some(_) = already_installed.perfect_match {
             return Err(MyOwnError::ActualError(
@@ -224,21 +141,22 @@ impl Installer {
 
         println!("## Ready to install application");
 
-        install_through_source(&application.source, application.application.as_ref())?;
+        application
+            .source
+            .manager()
+            .install(&application.application)?;
 
         println!("## Application installed");
 
-        all_applications.add(application)?;
+        self.0.add(application)?;
 
         println!("## Application added to list");
 
         Ok(())
     }
 
-    fn uninstall<'a>(self, application: Application<'a>) -> Result<(), MyOwnError> {
-        let mut all_applications = Applications::read()?;
-        let Some(existing_application) =
-            all_applications.get_application_by_name(&application.application)
+    fn uninstall(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+        let Some(existing_application) = self.0.get_application_by_name(&application.application)
         else {
             return Err(MyOwnError::ActualError(
                 "Application is not installed".into(),
@@ -257,33 +175,18 @@ impl Installer {
 
         println!("## Ready to uninstall application");
 
-        uninstall_through_source(&application.source, application.application.as_ref())?;
+        application
+            .source
+            .manager()
+            .uninstall(&application.application)?;
 
         println!("## Application uninstalled");
 
-        all_applications.remove(application)?;
+        self.0.remove(application)?;
 
         println!("## Application removed from list");
 
         Ok(())
-    }
-}
-
-fn install_through_source(source: &Source, application: &str) -> Result<(), MyOwnError> {
-    match &source {
-        Source::Apt => install_with_apt(&application),
-        Source::Brew => install_with_brew(&application),
-        Source::Cargo => install_with_cargo(&application),
-        Source::Npm => install_with_npm(&application),
-    }
-}
-
-fn uninstall_through_source(source: &Source, application: &str) -> Result<(), MyOwnError> {
-    match &source {
-        Source::Apt => uninstall_with_apt(&application),
-        Source::Brew => uninstall_with_brew(&application),
-        Source::Cargo => uninstall_with_cargo(&application),
-        Source::Npm => uninstall_with_npm(&application),
     }
 }
 
@@ -315,17 +218,23 @@ fn applications_file() -> String {
 }
 
 impl<'a> Applications<'a> {
-    fn read() -> Result<Self, MyOwnError> {
+    fn from_file() -> Result<Self, MyOwnError> {
         std::fs::create_dir_all(applications_folder())?;
-        let mut content = String::new();
-        OpenOptions::new()
+        let file_reader = OpenOptions::new()
             .write(true)
             .create(true)
             .read(true)
             .open(applications_file())
-            .with_error_description(|| format!("Error while loading {}", applications_file()))?
+            .with_error_description(|| format!("Error while loading {}", applications_file()))?;
+
+        Applications::from_reader(file_reader)
+    }
+
+    fn from_reader(mut reader: impl Read) -> Result<Self, MyOwnError> {
+        let mut content = String::new();
+        reader
             .read_to_string(&mut content)
-            .with_error_description(|| format!("Error while reading {}", applications_file()))?;
+            .with_error_description(|| format!("Error while reading applications"))?;
 
         let mut applications = vec![];
         for line in content.lines() {
@@ -472,6 +381,17 @@ impl FromStr for Source {
     }
 }
 
+impl Source {
+    fn manager(&self) -> Box<dyn SourceT> {
+        match self {
+            Source::Apt => Box::new(Apt),
+            Source::Brew => Box::new(Brew),
+            Source::Cargo => Box::new(Cargo),
+            Source::Npm => Box::new(Npm),
+        }
+    }
+}
+
 impl Display for Source {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -485,14 +405,20 @@ impl Display for Source {
 
 cli_options! {
     struct InstallOptions<'a> {
+        #[option(name = "-p")]
+        show_path: bool,
+
         #[option(name = "-u")]
         uninstall: bool,
 
-        #[option()]
-        source: Option<Source>,
+        #[option(name = "-i")]
+        applications_file_from_stdin: bool,
 
         #[option(name = "-a")]
         all: bool,
+
+        #[option()]
+        source: Option<Source>,
 
         #[option()]
         application: Option<&'a str>,
