@@ -5,11 +5,11 @@ use std::{
 
 use build_your_own_utils::my_own_error::MyOwnError;
 
-use crate::sources::SourceT;
+use crate::sources::SourceManager;
 
 pub(crate) struct Npm;
 
-impl SourceT for Npm {
+impl SourceManager for Npm {
     fn install(&self, application: &str) -> Result<(), MyOwnError> {
         let status = Command::new("npm")
             .args(&vec!["install", application, "-g"])
@@ -35,6 +35,21 @@ impl SourceT for Npm {
             Ok(())
         } else {
             Err(MyOwnError::ActualError("# Couldn't uninstall".into()))
+        }
+    }
+
+    fn has_application(&self, application: &str) -> Result<bool, MyOwnError> {
+        println!("# Npm: Search application...");
+        let output = Command::new("npm")
+            .args(&vec!["view", application])
+            .output()?;
+
+        if output.status.success() {
+            println!("# Npm: Found");
+            Ok(true)
+        } else {
+            println!("# Npm: Nothing found");
+            Ok(false)
         }
     }
 }

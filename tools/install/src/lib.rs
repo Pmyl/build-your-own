@@ -2,10 +2,8 @@ mod sources;
 
 use std::{
     borrow::Cow,
-    fmt::Display,
     fs::OpenOptions,
     io::{Read, Write, stdin},
-    str::FromStr,
 };
 
 use build_your_own_macros::cli_options;
@@ -14,7 +12,7 @@ use build_your_own_utils::{
     my_own_error::{DescribableError, MyOwnError},
 };
 
-use crate::sources::{SourceT, apt::Apt, brew::Brew, cargo::Cargo, npm::Npm};
+use crate::sources::{Source, search_source_with_application};
 
 // My idea!
 pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
@@ -25,13 +23,7 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         return Ok(());
     }
 
-    let application = match (options.source, options.application) {
-        (Some(source), Some(application)) => Some(Application {
-            source,
-            application: Cow::Borrowed(application),
-        }),
-        _ => None,
-    };
+    let application = identify_application(options.source, options.application)?;
 
     let applications = if options.applications_file_from_stdin {
         Applications::from_reader(stdin())
@@ -44,14 +36,22 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         (None, true, false) => Installer(applications).install_all(),
         (None, true, true) => Installer(applications).uninstall_all(),
         _ => {
-            println!("Usage: myown install [-p] [-u] [-a] [source] [application]");
-            println!("  -p             Print path of file with list of applications");
-            println!("  -u             Uninstall mode");
-            println!("  -a             Install/Uninstall all applications presents in the list");
-            println!("  -i             Read list of applications from stdin");
+            println!("Usage: myown install [-p] [-u] [-a] [application] [source]");
             println!();
-            println!("Example install: myown install npm tailwindcss");
-            println!("Example uninstall: myown install -u npm tailwindcss");
+            println!("Arguments:");
+            println!("  application    Name of app/package to install, mandatory without -a");
+            println!("  source         What to use to install the app/package, optional");
+            println!("                   If not provided it will find it and ask for confirmation");
+            println!("Flags:");
+            println!("  -u             Uninstall");
+            println!("  -i             Read list of applications from stdin");
+            println!("                   instead of {}", applications_file());
+            println!("Alternate modes:");
+            println!("  -p             Print path of file with list of applications");
+            println!("  -a             Install/Uninstall all applications presents in the list");
+            println!();
+            println!("Example install: myown install tailwindcss npm");
+            println!("Example uninstall: myown install -u tailwindcss npm");
             println!();
             if applications.0.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
@@ -63,6 +63,50 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
             }
             return Ok(());
         }
+    }
+}
+
+fn identify_application<'a>(
+    source: Option<Source>,
+    application: Option<&'a str>,
+) -> Result<Option<Application<'a>>, MyOwnError> {
+    match (source, application) {
+        (Some(source), Some(application)) => Ok(Some(Application::new(source, application))),
+        (None, Some(application)) => {
+            let mut sources_with_app = search_source_with_application(application)?;
+            if sources_with_app.is_empty() {
+                println!("# Found no sources with requested application, aborting");
+                return Err(MyOwnError::EarlyExit);
+            }
+
+            println!();
+            println!(
+                "# Found {} sources with application {}",
+                sources_with_app.len(),
+                application
+            );
+            for (i, source) in sources_with_app.iter().enumerate() {
+                println!("{}. {}", i + 1, source);
+            }
+            println!();
+            let answer = ask_input(&format!(
+                "# Which one do you want to use to install {}?",
+                application
+            ))?
+            .trim()
+            .parse::<usize>()
+            .error_description("Answer should be a number")?;
+
+            if answer == 0 || answer > sources_with_app.len() {
+                Err(MyOwnError::ActualError("Answer outside range".into()))
+            } else {
+                Ok(Some(Application::new(
+                    sources_with_app.remove(answer - 1),
+                    application,
+                )))
+            }
+        }
+        _ => Ok(None),
     }
 }
 
@@ -80,10 +124,7 @@ impl<'a> Installer<'a> {
 
         for application in self.0.0 {
             println!("## Installing {}", application.application);
-            application
-                .source
-                .manager()
-                .install(&application.application)?;
+            application.source.install(&application.application)?;
         }
 
         println!("## All applications installed");
@@ -101,10 +142,7 @@ impl<'a> Installer<'a> {
         println!("## Ready to uninstall all applications");
 
         for application in &self.0.0 {
-            application
-                .source
-                .manager()
-                .uninstall(&application.application)?;
+            application.source.uninstall(&application.application)?;
         }
 
         println!("## All applications uninstalled");
@@ -141,10 +179,7 @@ impl<'a> Installer<'a> {
 
         println!("## Ready to install application");
 
-        application
-            .source
-            .manager()
-            .install(&application.application)?;
+        application.source.install(&application.application)?;
 
         println!("## Application installed");
 
@@ -175,10 +210,7 @@ impl<'a> Installer<'a> {
 
         println!("## Ready to uninstall application");
 
-        application
-            .source
-            .manager()
-            .uninstall(&application.application)?;
+        application.source.uninstall(&application.application)?;
 
         println!("## Application uninstalled");
 
@@ -199,11 +231,27 @@ fn ask_permission(question: &str) -> Result<(), MyOwnError> {
     })
 }
 
+fn ask_input(question: &str) -> Result<String, MyOwnError> {
+    println!("{}", question);
+    let mut answer = String::new();
+    stdin().read_line(&mut answer)?;
+    Ok(answer)
+}
+
 struct Applications<'a>(Vec<Application<'a>>);
 
 struct Application<'a> {
     source: Source,
     application: Cow<'a, str>,
+}
+
+impl<'a> Application<'a> {
+    fn new(source: Source, application: &'a str) -> Self {
+        Self {
+            source,
+            application: Cow::Borrowed(application),
+        }
+    }
 }
 
 fn applications_folder() -> String {
@@ -359,50 +407,6 @@ struct AlreadyInstalled<'a> {
     similar_matches: Vec<&'a Application<'a>>,
 }
 
-#[derive(PartialEq)]
-enum Source {
-    Apt,
-    Brew,
-    Cargo,
-    Npm,
-}
-
-impl FromStr for Source {
-    type Err = MyOwnError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "apt" => Ok(Source::Apt),
-            "brew" => Ok(Source::Brew),
-            "cargo" => Ok(Source::Cargo),
-            "npm" => Ok(Source::Npm),
-            _ => Err(format!("{} is not a source", s).into()),
-        }
-    }
-}
-
-impl Source {
-    fn manager(&self) -> Box<dyn SourceT> {
-        match self {
-            Source::Apt => Box::new(Apt),
-            Source::Brew => Box::new(Brew),
-            Source::Cargo => Box::new(Cargo),
-            Source::Npm => Box::new(Npm),
-        }
-    }
-}
-
-impl Display for Source {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Source::Apt => write!(f, "apt"),
-            Source::Brew => write!(f, "brew"),
-            Source::Cargo => write!(f, "cargo"),
-            Source::Npm => write!(f, "npm"),
-        }
-    }
-}
-
 cli_options! {
     struct InstallOptions<'a> {
         #[option(name = "-p")]
@@ -418,9 +422,9 @@ cli_options! {
         all: bool,
 
         #[option()]
-        source: Option<Source>,
+        application: Option<&'a str>,
 
         #[option()]
-        application: Option<&'a str>,
+        source: Option<Source>,
     }
 }
