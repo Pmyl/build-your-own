@@ -60,7 +60,12 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
             if applications.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
                 for app in applications.list {
-                    println!("{} | {}", app.source, app.instructions.application);
+                    println!(
+                        "{} | {} | {}",
+                        app.source,
+                        app.instructions.application,
+                        app.instructions.args.join("&")
+                    );
                 }
             } else {
                 println!("# No apps installed [{}]", applications_file());
@@ -175,14 +180,18 @@ impl<'a> Installer<'a> {
             println!("# Found installed applications with a similar name");
             for similar in already_installed.similar_matches {
                 println!(
-                    "## {} | {}",
-                    similar.source, similar.instructions.application
+                    "## {} | {} | {}",
+                    similar.source,
+                    similar.instructions.application,
+                    similar.instructions.args.join("&")
                 );
             }
 
             ask_permission(&format!(
-                "# Do you want to still install {} | {}? Y/n",
-                application.source, application.instructions.application
+                "# Do you want to still install {} | {} | {}? Y/n",
+                application.source,
+                application.instructions.application,
+                application.instructions.args.join("&")
             ))?;
         }
 
@@ -406,7 +415,13 @@ impl<'a> Applications<'a> {
         self.list.remove(index);
 
         for app in &self.list {
-            writeln!(file, "{}|{}", app.source, app.instructions.application)?;
+            writeln!(
+                file,
+                "{}|{}|{}",
+                app.source,
+                app.instructions.application,
+                app.instructions.args.join("&")
+            )?;
         }
         file.flush()?;
 

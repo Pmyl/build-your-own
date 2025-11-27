@@ -13,7 +13,7 @@ impl SourceManager for Npm {
     fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
         let status = Command::new("npm")
             .args(
-                &vec!["install", &application.application]
+                &vec!["install", &application.application, "-g"]
                     .into_iter()
                     .chain(application.args.iter().map(|arg| arg.as_ref()))
                     .collect::<Vec<_>>(),
