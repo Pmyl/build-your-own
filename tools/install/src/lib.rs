@@ -349,7 +349,7 @@ impl<'a> Applications<'a> {
             let args = parts
                 .next()
                 .unwrap_or("")
-                .split('|')
+                .split('&')
                 .map(|arg| Cow::Owned(arg.to_string()))
                 .collect::<Vec<_>>();
 
@@ -378,8 +378,10 @@ impl<'a> Applications<'a> {
 
         writeln!(
             file,
-            "{}|{}",
-            application.source, application.instructions.application
+            "{}|{}|{}",
+            application.source,
+            application.instructions.application,
+            application.instructions.args.join("&")
         )?;
         file.flush()?;
 
