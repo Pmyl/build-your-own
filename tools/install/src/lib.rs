@@ -23,7 +23,7 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         return Ok(());
     }
 
-    let application = identify_application(options.source, options.application)?;
+    let application = identify_application(options.source, options.application, options.args)?;
 
     let applications = if options.applications_file_from_stdin {
         Applications::from_stdin()
@@ -36,12 +36,13 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         (None, true, false) => Installer(applications).install_all(),
         (None, true, true) => Installer(applications).uninstall_all(),
         _ => {
-            println!("Usage: myown install [-p] [-a] [-u] [-i] [application] [source]");
+            println!("Usage: myown install [-p] [-a] [-u] [-i] [application] [source] [--args]");
             println!();
             println!("Arguments:");
             println!("  application    Name of app/package to install, mandatory without -a");
             println!("  source         What to use to install the app/package, optional");
             println!("                   If not provided it will find it and ask for confirmation");
+            println!("  --args         Arguments to pass to the installer, pipe delimited");
             println!("Flags:");
             println!("  -u             Uninstall");
             println!("  -i             Read list of applications from stdin");
@@ -51,12 +52,15 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
             println!("  -a             Install/Uninstall all applications presents in the list");
             println!();
             println!("Example install: myown install tailwindcss npm");
+            println!(
+                "Example install with args: myown install dx-cli cargo --args \"--no-default-features|--features|web,server\""
+            );
             println!("Example uninstall: myown install -u tailwindcss npm");
             println!();
             if applications.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
                 for app in applications.list {
-                    println!("{} | {}", app.source, app.application);
+                    println!("{} | {}", app.source, app.instructions.application);
                 }
             } else {
                 println!("# No apps installed [{}]", applications_file());
@@ -69,9 +73,10 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
 fn identify_application<'a>(
     source: Option<Source>,
     application: Option<&'a str>,
+    args: Vec<&'a str>,
 ) -> Result<Option<Application<'a>>, MyOwnError> {
     match (source, application) {
-        (Some(source), Some(application)) => Ok(Some(Application::new(source, application))),
+        (Some(source), Some(application)) => Ok(Some(Application::new(source, application, args))),
         (None, Some(application)) => {
             let mut sources_with_app = search_source_with_application(application)?;
             if sources_with_app.is_empty() {
@@ -103,6 +108,7 @@ fn identify_application<'a>(
                 Ok(Some(Application::new(
                     sources_with_app.remove(answer - 1),
                     application,
+                    args,
                 )))
             }
         }
@@ -123,8 +129,8 @@ impl<'a> Installer<'a> {
         println!("## Ready to install all applications");
 
         for application in self.0.list {
-            println!("## Installing {}", application.application);
-            application.source.install(&application.application)?;
+            println!("## Installing {}", application.instructions.application);
+            application.source.install(&application.instructions)?;
         }
 
         println!("## All applications installed");
@@ -142,7 +148,7 @@ impl<'a> Installer<'a> {
         println!("## Ready to uninstall all applications");
 
         for application in &self.0.list {
-            application.source.uninstall(&application.application)?;
+            application.source.uninstall(&application.instructions)?;
         }
 
         println!("## All applications uninstalled");
@@ -157,7 +163,7 @@ impl<'a> Installer<'a> {
     fn install(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
         let already_installed = self
             .0
-            .is_already_installed(&application.source, &application.application);
+            .is_already_installed(&application.source, &application.instructions.application);
 
         if let Some(_) = already_installed.perfect_match {
             return Err(MyOwnError::ActualError(
@@ -168,18 +174,21 @@ impl<'a> Installer<'a> {
         if already_installed.similar_matches.len() > 0 {
             println!("# Found installed applications with a similar name");
             for similar in already_installed.similar_matches {
-                println!("## {} | {}", similar.source, similar.application);
+                println!(
+                    "## {} | {}",
+                    similar.source, similar.instructions.application
+                );
             }
 
             ask_permission(&format!(
                 "# Do you want to still install {} | {}? Y/n",
-                application.source, application.application
+                application.source, application.instructions.application
             ))?;
         }
 
         println!("## Ready to install application");
 
-        application.source.install(&application.application)?;
+        application.source.install(&application.instructions)?;
 
         println!("## Application installed");
 
@@ -191,7 +200,9 @@ impl<'a> Installer<'a> {
     }
 
     fn uninstall(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
-        let Some(existing_application) = self.0.get_application_by_name(&application.application)
+        let Some(existing_application) = self
+            .0
+            .get_application_by_name(&application.instructions.application)
         else {
             return Err(MyOwnError::ActualError(
                 "Application is not installed".into(),
@@ -210,7 +221,7 @@ impl<'a> Installer<'a> {
 
         println!("## Ready to uninstall application");
 
-        application.source.uninstall(&application.application)?;
+        application.source.uninstall(&application.instructions)?;
 
         println!("## Application uninstalled");
 
@@ -249,14 +260,25 @@ struct Applications<'a> {
 
 struct Application<'a> {
     source: Source,
+    instructions: ApplicationInstructions<'a>,
+}
+
+struct ApplicationInstructions<'a> {
     application: Cow<'a, str>,
+    args: Vec<Cow<'a, str>>,
 }
 
 impl<'a> Application<'a> {
-    fn new(source: Source, application: &'a str) -> Self {
+    fn new(source: Source, application: &'a str, args: Vec<&'a str>) -> Self {
         Self {
             source,
-            application: Cow::Borrowed(application),
+            instructions: ApplicationInstructions {
+                application: Cow::Borrowed(application),
+                args: args
+                    .into_iter()
+                    .map(|arg| Cow::Borrowed(arg))
+                    .collect::<Vec<_>>(),
+            },
         }
     }
 }
@@ -324,10 +346,19 @@ impl<'a> Applications<'a> {
                     )
                 })?
                 .to_string();
+            let args = parts
+                .next()
+                .unwrap_or("")
+                .split('|')
+                .map(|arg| Cow::Owned(arg.to_string()))
+                .collect::<Vec<_>>();
 
             applications.push(Application {
                 source,
-                application: Cow::Owned(application),
+                instructions: ApplicationInstructions {
+                    application: Cow::Owned(application),
+                    args,
+                },
             });
         }
 
@@ -345,7 +376,11 @@ impl<'a> Applications<'a> {
             .open(applications_file())
             .with_error_description(|| format!("Error while loading {}", applications_file()))?;
 
-        writeln!(file, "{}|{}", application.source, application.application)?;
+        writeln!(
+            file,
+            "{}|{}",
+            application.source, application.instructions.application
+        )?;
         file.flush()?;
 
         self.list.push(application);
@@ -364,12 +399,12 @@ impl<'a> Applications<'a> {
         let index = self
             .list
             .iter()
-            .position(|app| app.application == application.application)
+            .position(|app| app.instructions.application == application.instructions.application)
             .ok_or_else(|| MyOwnError::ActualError("Couldn't find application to remove".into()))?;
         self.list.remove(index);
 
         for app in &self.list {
-            writeln!(file, "{}|{}", app.source, app.application)?;
+            writeln!(file, "{}|{}", app.source, app.instructions.application)?;
         }
         file.flush()?;
 
@@ -389,13 +424,15 @@ impl<'a> Applications<'a> {
     }
 
     fn get_application_by_name(&self, application: &str) -> Option<&Application<'a>> {
-        self.list.iter().find(|app| app.application == application)
+        self.list
+            .iter()
+            .find(|app| app.instructions.application == application)
     }
 
     fn get_application(&self, source: &Source, application: &str) -> Option<&Application<'a>> {
         self.list
             .iter()
-            .find(|app| &app.source == source && app.application == application)
+            .find(|app| &app.source == source && app.instructions.application == application)
     }
 
     fn is_already_installed(
@@ -408,7 +445,7 @@ impl<'a> Applications<'a> {
             &self
                 .list
                 .iter()
-                .map(|a| a.application.as_ref())
+                .map(|a| a.instructions.application.as_ref())
                 .collect::<Vec<_>>(),
             3,
         );
@@ -451,5 +488,8 @@ cli_options! {
 
         #[option()]
         source: Option<Source>,
+
+        #[option(name = "--args", delimiters = &['|'])]
+        args: Vec<&'a str>,
     }
 }

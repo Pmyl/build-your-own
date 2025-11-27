@@ -5,14 +5,19 @@ use std::{
 
 use build_your_own_utils::my_own_error::MyOwnError;
 
-use crate::sources::SourceManager;
+use crate::{ApplicationInstructions, sources::SourceManager};
 
 pub(crate) struct Apt;
 
 impl SourceManager for Apt {
-    fn install(&self, application: &str) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
         let status = Command::new("apt")
-            .args(&vec!["install", application])
+            .args(
+                &vec!["install", &application.application]
+                    .into_iter()
+                    .chain(application.args.iter().map(|arg| arg.as_ref()))
+                    .collect::<Vec<_>>(),
+            )
             .stdout(stdout())
             .stderr(stderr())
             .status()?;
@@ -24,7 +29,7 @@ impl SourceManager for Apt {
         }
     }
 
-    fn uninstall(&self, _: &str) -> Result<(), MyOwnError> {
+    fn uninstall(&self, _: &ApplicationInstructions) -> Result<(), MyOwnError> {
         todo!("Uninstall with apt is hard, I'll do it later")
     }
 

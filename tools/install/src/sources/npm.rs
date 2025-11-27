@@ -5,14 +5,19 @@ use std::{
 
 use build_your_own_utils::my_own_error::MyOwnError;
 
-use crate::sources::SourceManager;
+use crate::{ApplicationInstructions, sources::SourceManager};
 
 pub(crate) struct Npm;
 
 impl SourceManager for Npm {
-    fn install(&self, application: &str) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
         let status = Command::new("npm")
-            .args(&vec!["install", application, "-g"])
+            .args(
+                &vec!["install", &application.application]
+                    .into_iter()
+                    .chain(application.args.iter().map(|arg| arg.as_ref()))
+                    .collect::<Vec<_>>(),
+            )
             .stdout(stdout())
             .stderr(stderr())
             .status()?;
@@ -24,9 +29,9 @@ impl SourceManager for Npm {
         }
     }
 
-    fn uninstall(&self, application: &str) -> Result<(), MyOwnError> {
+    fn uninstall(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
         let status = Command::new("npm")
-            .args(&vec!["uninstall", application, "-g"])
+            .args(&vec!["uninstall", application.application.as_ref(), "-g"])
             .stdout(stdout())
             .stderr(stderr())
             .status()?;

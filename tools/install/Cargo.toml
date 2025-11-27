@@ -9,3 +9,10 @@ crate-type = ["lib"]
 [dependencies]
 build-your-own-utils = { path = "../../utils" }
 build-your-own-macros = { path = "../../macros" }
+
+[features]
+default = ["apt", "brew", "cargo", "npm"]
+apt = []
+brew = []
+cargo = []
+npm = []
