@@ -2,8 +2,8 @@ mod sources;
 
 use std::{
     borrow::Cow,
-    fs::OpenOptions,
-    io::{Read, Write, stdin},
+    fs::{File, OpenOptions},
+    io::{BufRead, BufReader, Read, Write, stdin},
 };
 
 use build_your_own_macros::cli_options;
@@ -26,7 +26,7 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let application = identify_application(options.source, options.application)?;
 
     let applications = if options.applications_file_from_stdin {
-        Applications::from_reader(stdin())
+        Applications::from_stdin()
     } else {
         Applications::from_file()
     }?;
@@ -36,7 +36,7 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         (None, true, false) => Installer(applications).install_all(),
         (None, true, true) => Installer(applications).uninstall_all(),
         _ => {
-            println!("Usage: myown install [-p] [-u] [-a] [application] [source]");
+            println!("Usage: myown install [-p] [-a] [-u] [-i] [application] [source]");
             println!();
             println!("Arguments:");
             println!("  application    Name of app/package to install, mandatory without -a");
@@ -53,9 +53,9 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
             println!("Example install: myown install tailwindcss npm");
             println!("Example uninstall: myown install -u tailwindcss npm");
             println!();
-            if applications.0.len() > 0 {
+            if applications.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
-                for app in applications.0 {
+                for app in applications.list {
                     println!("{} | {}", app.source, app.application);
                 }
             } else {
@@ -114,15 +114,15 @@ struct Installer<'a>(Applications<'a>);
 
 impl<'a> Installer<'a> {
     fn install_all(self) -> Result<(), MyOwnError> {
-        println!("# Applications list from [{}]", applications_file());
+        println!("# Applications list from [{}]", self.0.list_source());
         ask_permission(&format!(
             "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
-            self.0.0.len()
+            self.0.list.len()
         ))?;
 
         println!("## Ready to install all applications");
 
-        for application in self.0.0 {
+        for application in self.0.list {
             println!("## Installing {}", application.application);
             application.source.install(&application.application)?;
         }
@@ -133,15 +133,15 @@ impl<'a> Installer<'a> {
     }
 
     fn uninstall_all(mut self) -> Result<(), MyOwnError> {
-        println!("# Applications list from [{}]", applications_file());
+        println!("# Applications list from [{}]", self.0.list_source());
         ask_permission(&format!(
             "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
-            self.0.0.len()
+            self.0.list.len()
         ))?;
 
         println!("## Ready to uninstall all applications");
 
-        for application in &self.0.0 {
+        for application in &self.0.list {
             application.source.uninstall(&application.application)?;
         }
 
@@ -223,22 +223,29 @@ impl<'a> Installer<'a> {
 }
 
 fn ask_permission(question: &str) -> Result<(), MyOwnError> {
-    println!("{}", question);
-    let mut answer = String::new();
-    stdin().read_line(&mut answer)?;
-    Ok(if answer.trim().to_lowercase() == "n" {
-        return Err(MyOwnError::EarlyExit);
+    ask_input(question).and_then(|answer| {
+        Ok(if answer.trim().to_lowercase() == "n" {
+            return Err(MyOwnError::EarlyExit);
+        })
     })
 }
 
 fn ask_input(question: &str) -> Result<String, MyOwnError> {
-    println!("{}", question);
+    let mut tty = BufReader::new(File::open("/dev/tty")?);
+    let mut tty_out = File::create("/dev/tty")?;
+
+    writeln!(tty_out, "{}", question)?;
+    tty_out.flush()?;
+
     let mut answer = String::new();
-    stdin().read_line(&mut answer)?;
+    tty.read_line(&mut answer)?;
     Ok(answer)
 }
 
-struct Applications<'a>(Vec<Application<'a>>);
+struct Applications<'a> {
+    list: Vec<Application<'a>>,
+    list_source: String,
+}
 
 struct Application<'a> {
     source: Source,
@@ -275,10 +282,24 @@ impl<'a> Applications<'a> {
             .open(applications_file())
             .with_error_description(|| format!("Error while loading {}", applications_file()))?;
 
-        Applications::from_reader(file_reader)
+        let list = Applications::<'a>::list_from_reader(file_reader)?;
+
+        Ok(Applications {
+            list,
+            list_source: applications_file(),
+        })
     }
 
-    fn from_reader(mut reader: impl Read) -> Result<Self, MyOwnError> {
+    fn from_stdin() -> Result<Self, MyOwnError> {
+        let list = Applications::<'a>::list_from_reader(stdin())?;
+
+        Ok(Applications {
+            list,
+            list_source: "stdin".to_string(),
+        })
+    }
+
+    fn list_from_reader(mut reader: impl Read) -> Result<Vec<Application<'a>>, MyOwnError> {
         let mut content = String::new();
         reader
             .read_to_string(&mut content)
@@ -310,7 +331,11 @@ impl<'a> Applications<'a> {
             });
         }
 
-        Ok(Applications(applications))
+        Ok(applications)
+    }
+
+    fn list_source(&'a self) -> &'a str {
+        &self.list_source
     }
 
     fn add(&mut self, application: Application<'a>) -> Result<(), MyOwnError> {
@@ -323,7 +348,7 @@ impl<'a> Applications<'a> {
         writeln!(file, "{}|{}", application.source, application.application)?;
         file.flush()?;
 
-        self.0.push(application);
+        self.list.push(application);
 
         Ok(())
     }
@@ -337,13 +362,13 @@ impl<'a> Applications<'a> {
             .with_error_description(|| format!("Error while loading {}", applications_file()))?;
 
         let index = self
-            .0
+            .list
             .iter()
             .position(|app| app.application == application.application)
             .ok_or_else(|| MyOwnError::ActualError("Couldn't find application to remove".into()))?;
-        self.0.remove(index);
+        self.list.remove(index);
 
-        for app in &self.0 {
+        for app in &self.list {
             writeln!(file, "{}|{}", app.source, app.application)?;
         }
         file.flush()?;
@@ -364,11 +389,11 @@ impl<'a> Applications<'a> {
     }
 
     fn get_application_by_name(&self, application: &str) -> Option<&Application<'a>> {
-        self.0.iter().find(|app| app.application == application)
+        self.list.iter().find(|app| app.application == application)
     }
 
     fn get_application(&self, source: &Source, application: &str) -> Option<&Application<'a>> {
-        self.0
+        self.list
             .iter()
             .find(|app| &app.source == source && app.application == application)
     }
@@ -381,7 +406,7 @@ impl<'a> Applications<'a> {
         let indices = fuzzy_search(
             application,
             &self
-                .0
+                .list
                 .iter()
                 .map(|a| a.application.as_ref())
                 .collect::<Vec<_>>(),
@@ -390,7 +415,7 @@ impl<'a> Applications<'a> {
 
         let similar_matches = indices
             .into_iter()
-            .map(|i| self.0.get(i).unwrap())
+            .map(|i| self.list.get(i).unwrap())
             .collect::<Vec<_>>();
 
         let perfect_match = self.get_application(source, application);
