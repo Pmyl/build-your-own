@@ -73,7 +73,7 @@ pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
             installer.uninstall_all()
         }
         _ => {
-            println!("Usage: myown install [-p] [-a] [-u] [-i] [application] [source] [--args]");
+            println!("Usage: pmi [-p] [-a] [-u] [-i] [application] [source] [--args]");
             println!();
             println!("Arguments:");
             println!("  application    Name of app/package to install, mandatory without -a");
@@ -88,11 +88,11 @@ pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
             println!("  -p             Print path of file with list of applications");
             println!("  -a             Install/Uninstall all applications presents in the list");
             println!();
-            println!("Example install: myown install tailwindcss npm");
+            println!("Example install: pmi tailwindcss npm");
             println!(
-                "Example install with args: myown install dx-cli cargo --args \"--no-default-features&--features&web,server\""
+                "Example install with args: pmi dx-cli cargo --args \"--no-default-features&--features&web,server\""
             );
-            println!("Example uninstall: myown install -u tailwindcss npm");
+            println!("Example uninstall: pmi -u tailwindcss npm");
             println!();
             if installer.0.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
@@ -291,14 +291,11 @@ impl<'a> Application<'a> {
 }
 
 fn applications_folder() -> String {
-    format!("{}/.my-own-installer", std::env::var("HOME").unwrap())
+    format!("{}/.pmi", std::env::var("HOME").unwrap())
 }
 
 fn applications_file() -> String {
-    format!(
-        "{}/.my-own-installer/applications",
-        std::env::var("HOME").unwrap()
-    )
+    format!("{}/.pmi/applications", std::env::var("HOME").unwrap())
 }
 
 impl<'a> Applications<'a> {
