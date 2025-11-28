@@ -23,18 +23,55 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
         return Ok(());
     }
 
-    let application = identify_application(options.source, options.application, options.args)?;
-
     let applications = if options.applications_file_from_stdin {
         Applications::from_stdin()
     } else {
         Applications::from_file()
     }?;
+
+    let installer = Installer(applications);
+    let application = match (options.application, options.source) {
+        (Some(application), Some(source)) => {
+            Some(Application::new(source, application, options.args))
+        }
+        (Some(application), None) => {
+            let mut possible_matches = if options.uninstall {
+                installer.0.get_applications_by_name(application)
+            } else {
+                installer.identify_application(application)?
+            };
+            match possible_matches.len() {
+                0 => {
+                    println!("Found no matches, aborting");
+                    return Ok(());
+                }
+                1 => Some(possible_matches.remove(0)),
+                _ => {
+                    let index = confirm_application(&possible_matches)?;
+                    Some(possible_matches.remove(index))
+                }
+            }
+        }
+        _ => None,
+    };
+
     match (application, options.all, options.uninstall) {
-        (Some(application), false, false) => Installer(applications).install(application),
-        (Some(application), false, true) => Installer(applications).uninstall(application),
-        (None, true, false) => Installer(applications).install_all(),
-        (None, true, true) => Installer(applications).uninstall_all(),
+        (Some(application), false, false) => installer.install(application),
+        (Some(application), false, true) => installer.uninstall(application),
+        (None, true, false) => {
+            ask_permission(&format!(
+                "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
+                installer.0.list.len()
+            ))?;
+            installer.install_all()
+        }
+        (None, true, true) => {
+            ask_permission(&format!(
+                "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
+                installer.0.list.len()
+            ))?;
+            installer.uninstall_all()
+        }
         _ => {
             println!("Usage: myown install [-p] [-a] [-u] [-i] [application] [source] [--args]");
             println!();
@@ -57,9 +94,9 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
             );
             println!("Example uninstall: myown install -u tailwindcss npm");
             println!();
-            if applications.list.len() > 0 {
+            if installer.0.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
-                for app in applications.list {
+                for app in installer.0.list {
                     println!(
                         "{} | {} | {}",
                         app.source,
@@ -75,49 +112,21 @@ pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
     }
 }
 
-fn identify_application<'a>(
-    source: Option<Source>,
-    application: Option<&'a str>,
-    args: Vec<&'a str>,
-) -> Result<Option<Application<'a>>, MyOwnError> {
-    match (source, application) {
-        (Some(source), Some(application)) => Ok(Some(Application::new(source, application, args))),
-        (None, Some(application)) => {
-            let mut sources_with_app = search_source_with_application(application)?;
-            if sources_with_app.is_empty() {
-                println!("# Found no sources with requested application, aborting");
-                return Err(MyOwnError::EarlyExit);
-            }
+fn confirm_application<'a>(applications: &[Application<'a>]) -> Result<usize, MyOwnError> {
+    println!("# Found {} alternatives", applications.len());
+    for (i, app) in applications.iter().enumerate() {
+        println!("{}. {}", i + 1, app.source);
+    }
+    println!();
+    let answer = ask_input(&format!("# Which one?",))?
+        .trim()
+        .parse::<usize>()
+        .error_description("Answer should be a number")?;
 
-            println!();
-            println!(
-                "# Found {} sources with application {}",
-                sources_with_app.len(),
-                application
-            );
-            for (i, source) in sources_with_app.iter().enumerate() {
-                println!("{}. {}", i + 1, source);
-            }
-            println!();
-            let answer = ask_input(&format!(
-                "# Which one do you want to use to install {}?",
-                application
-            ))?
-            .trim()
-            .parse::<usize>()
-            .error_description("Answer should be a number")?;
-
-            if answer == 0 || answer > sources_with_app.len() {
-                Err(MyOwnError::ActualError("Answer outside range".into()))
-            } else {
-                Ok(Some(Application::new(
-                    sources_with_app.remove(answer - 1),
-                    application,
-                    args,
-                )))
-            }
-        }
-        _ => Ok(None),
+    if answer == 0 || answer > applications.len() {
+        Err(MyOwnError::ActualError("Answer outside range".into()))
+    } else {
+        Ok(answer)
     }
 }
 
@@ -125,12 +134,6 @@ struct Installer<'a>(Applications<'a>);
 
 impl<'a> Installer<'a> {
     fn install_all(self) -> Result<(), MyOwnError> {
-        println!("# Applications list from [{}]", self.0.list_source());
-        ask_permission(&format!(
-            "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
-            self.0.list.len()
-        ))?;
-
         println!("## Ready to install all applications");
 
         for application in self.0.list {
@@ -144,12 +147,6 @@ impl<'a> Installer<'a> {
     }
 
     fn uninstall_all(mut self) -> Result<(), MyOwnError> {
-        println!("# Applications list from [{}]", self.0.list_source());
-        ask_permission(&format!(
-            "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
-            self.0.list.len()
-        ))?;
-
         println!("## Ready to uninstall all applications");
 
         for application in &self.0.list {
@@ -166,9 +163,7 @@ impl<'a> Installer<'a> {
     }
 
     fn install(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
-        let already_installed = self
-            .0
-            .is_already_installed(&application.source, &application.instructions.application);
+        let already_installed = self.0.is_already_installed(&application);
 
         if let Some(_) = already_installed.perfect_match {
             return Err(MyOwnError::ActualError(
@@ -209,24 +204,11 @@ impl<'a> Installer<'a> {
     }
 
     fn uninstall(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
-        let Some(existing_application) = self
-            .0
-            .get_application_by_name(&application.instructions.application)
-        else {
+        if let None = self.0.get_matching_application(&application) {
             return Err(MyOwnError::ActualError(
-                "Application is not installed".into(),
+                "Application is not installed or not installed through same source".into(),
             ));
         };
-
-        if existing_application.source != application.source {
-            return Err(MyOwnError::ActualError(
-                format!(
-                    "Application is not installed through {} but through {}",
-                    application.source, existing_application.source
-                )
-                .into(),
-            ));
-        }
 
         println!("## Ready to uninstall application");
 
@@ -239,6 +221,16 @@ impl<'a> Installer<'a> {
         println!("## Application removed from list");
 
         Ok(())
+    }
+
+    fn identify_application(
+        &self,
+        application: &'a str,
+    ) -> Result<Vec<Application<'a>>, MyOwnError> {
+        Ok(search_source_with_application(application)?
+            .into_iter()
+            .map(|s| Application::<'a>::new(s, application, vec![]))
+            .collect::<Vec<_>>())
     }
 }
 
@@ -264,14 +256,15 @@ fn ask_input(question: &str) -> Result<String, MyOwnError> {
 
 struct Applications<'a> {
     list: Vec<Application<'a>>,
-    list_source: String,
 }
 
+#[derive(Clone)]
 struct Application<'a> {
     source: Source,
     instructions: ApplicationInstructions<'a>,
 }
 
+#[derive(Clone)]
 struct ApplicationInstructions<'a> {
     application: Cow<'a, str>,
     args: Vec<Cow<'a, str>>,
@@ -289,6 +282,11 @@ impl<'a> Application<'a> {
                     .collect::<Vec<_>>(),
             },
         }
+    }
+
+    fn identify_same_application(&self, application: &Application<'a>) -> bool {
+        self.source == application.source
+            && self.instructions.application == application.instructions.application
     }
 }
 
@@ -314,20 +312,18 @@ impl<'a> Applications<'a> {
             .with_error_description(|| format!("Error while loading {}", applications_file()))?;
 
         let list = Applications::<'a>::list_from_reader(file_reader)?;
+        let list_source = applications_file();
 
-        Ok(Applications {
-            list,
-            list_source: applications_file(),
-        })
+        println!("# Applications list from [{}]", list_source);
+        Ok(Applications { list })
     }
 
     fn from_stdin() -> Result<Self, MyOwnError> {
         let list = Applications::<'a>::list_from_reader(stdin())?;
+        let list_source = "stdin".to_string();
 
-        Ok(Applications {
-            list,
-            list_source: "stdin".to_string(),
-        })
+        println!("# Applications list from [{}]", list_source);
+        Ok(Applications { list })
     }
 
     fn list_from_reader(mut reader: impl Read) -> Result<Vec<Application<'a>>, MyOwnError> {
@@ -372,10 +368,6 @@ impl<'a> Applications<'a> {
         }
 
         Ok(applications)
-    }
-
-    fn list_source(&'a self) -> &'a str {
-        &self.list_source
     }
 
     fn add(&mut self, application: Application<'a>) -> Result<(), MyOwnError> {
@@ -440,25 +432,32 @@ impl<'a> Applications<'a> {
         Ok(())
     }
 
-    fn get_application_by_name(&self, application: &str) -> Option<&Application<'a>> {
+    fn get_applications_by_name(&self, application: &'a str) -> Vec<Application<'a>> {
         self.list
             .iter()
-            .find(|app| app.instructions.application == application)
+            .filter(|app| app.instructions.application == application)
+            .cloned()
+            .collect::<Vec<_>>()
     }
 
-    fn get_application(&self, source: &Source, application: &str) -> Option<&Application<'a>> {
+    fn get_matching_application(&self, application: &Application<'a>) -> Option<&Application<'a>> {
         self.list
             .iter()
-            .find(|app| &app.source == source && app.instructions.application == application)
+            .find(|app| app.identify_same_application(application))
     }
 
-    fn is_already_installed(
-        &'a self,
-        source: &'a Source,
-        application: &'a str,
-    ) -> AlreadyInstalled<'a> {
+    // TODO: rename this and the above
+    fn get_application(&self, application: &Application<'a>) -> Option<&Application<'a>> {
+        self.list.iter().find(|app| {
+            app.source == application.source
+                && app.instructions.application == application.instructions.application
+                && app.instructions.args == application.instructions.args
+        })
+    }
+
+    fn is_already_installed(&'a self, application: &Application<'a>) -> AlreadyInstalled<'a> {
         let indices = fuzzy_search(
-            application,
+            &application.instructions.application,
             &self
                 .list
                 .iter()
@@ -472,7 +471,7 @@ impl<'a> Applications<'a> {
             .map(|i| self.list.get(i).unwrap())
             .collect::<Vec<_>>();
 
-        let perfect_match = self.get_application(source, application);
+        let perfect_match = self.get_application(application);
 
         AlreadyInstalled {
             perfect_match,

@@ -22,7 +22,7 @@ macro_rules! build_sources {
             $( $(#[$meta:meta])* $variant:ident ($as_str:expr) ),* $(,)?
         }
     ) => {
-        #[derive(Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq)]
         pub(crate) enum $name {
             $(
                 $(#[$meta])*
