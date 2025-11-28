@@ -15,7 +15,7 @@ use build_your_own_utils::{
 use crate::sources::{Source, search_source_with_application};
 
 // My idea!
-pub fn install_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
     let options = InstallOptions::from_args(args)?;
 
     if options.show_path {
