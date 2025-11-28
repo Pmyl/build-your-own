@@ -90,7 +90,7 @@ pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
             println!();
             println!("Example install: myown install tailwindcss npm");
             println!(
-                "Example install with args: myown install dx-cli cargo --args \"--no-default-features|--features|web,server\""
+                "Example install with args: myown install dx-cli cargo --args \"--no-default-features&--features&web,server\""
             );
             println!("Example uninstall: myown install -u tailwindcss npm");
             println!();
@@ -505,7 +505,7 @@ cli_options! {
         #[option()]
         source: Option<Source>,
 
-        #[option(name = "--args", delimiters = &['|'])]
+        #[option(name = "--args", delimiters = &['&'])]
         args: Vec<&'a str>,
     }
 }
