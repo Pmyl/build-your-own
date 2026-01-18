@@ -1,6 +1,7 @@
 pub(crate) mod apt;
 pub(crate) mod brew;
 pub(crate) mod cargo;
+pub(crate) mod executable_file;
 pub(crate) mod npm;
 
 use std::{fmt::Display, str::FromStr};
@@ -8,7 +9,9 @@ use std::{fmt::Display, str::FromStr};
 use crate::ApplicationInstructions;
 use build_your_own_utils::my_own_error::MyOwnError;
 
-use crate::sources::{apt::Apt, brew::Brew, cargo::Cargo, npm::Npm};
+use crate::sources::{
+    apt::Apt, brew::Brew, cargo::Cargo, executable_file::ExecutableFile, npm::Npm,
+};
 
 pub(crate) trait SourceManager {
     fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError>;
@@ -101,4 +104,7 @@ build_sources!(Source {
 
     #[cfg(feature = "npm")]
     Npm ("npm"),
+
+    #[cfg(feature = "executable_file")]
+    ExecutableFile ("executable_file"),
 });
