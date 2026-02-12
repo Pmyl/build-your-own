@@ -51,10 +51,10 @@ impl SourceManager for Snap {
 
         let out = String::from_utf8(output.stdout)?;
         if !out.contains("No matching snaps") {
-            println!("# Apt: Found");
+            println!("# Snap: Found");
             Ok(true)
         } else {
-            println!("# Apt: Nothing found");
+            println!("# Snap: Nothing found");
             Ok(false)
         }
     }
