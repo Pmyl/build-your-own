@@ -11,9 +11,10 @@ build-your-own-utils = { path = "../../utils" }
 build-your-own-macros = { path = "../../macros" }
 
 [features]
-default = ["apt", "brew", "cargo", "npm", "executable_file"]
+default = ["apt", "brew", "cargo", "npm", "executable_file", "snap"]
 apt = []
 brew = []
 cargo = []
 npm = []
 executable_file = []
+snap = []
