@@ -3,14 +3,14 @@ use std::{
     process::Command,
 };
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
 use crate::{ApplicationInstructions, sources::SourceManager};
 
 pub(crate) struct Brew;
 
 impl SourceManager for Brew {
-    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let status = Command::new("brew")
             .args(
                 &vec!["install", &application.application]
@@ -29,7 +29,7 @@ impl SourceManager for Brew {
         }
     }
 
-    fn uninstall(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let status = Command::new("brew")
             .args(&vec!["uninstall", application.application.as_ref()])
             .stdout(stdout())
@@ -43,7 +43,7 @@ impl SourceManager for Brew {
         }
     }
 
-    fn has_application(&self, application: &str) -> Result<bool, MyOwnError> {
+    fn has_application(&self, application: &str) -> MyOwnResult<bool> {
         println!("# Brew: Search application...");
         let output = Command::new("brew")
             .args(&vec!["search", application])

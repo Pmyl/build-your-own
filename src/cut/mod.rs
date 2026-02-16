@@ -1,15 +1,15 @@
 use std::io::{stdin, stdout, BufRead, BufReader, Read, Write};
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnResult};
 
 // https://codingchallenges.fyi/challenges/challenge-cut
 
-pub fn cut_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn cut_cli(args: &[&str]) -> MyOwnResult<()> {
     cut_cli_impl(args, stdin(), stdout())
 }
 
-fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(), MyOwnError> {
+fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> MyOwnResult<()> {
     let options = CutCliOptions::from_args(args)?;
 
     if let Some(input_file) = options.input_file {
@@ -22,7 +22,7 @@ fn cut_cli_impl(args: &[&str], input: impl Read, output: impl Write) -> Result<(
     }
 }
 
-fn cut(options: CutOptions, input: impl Read, mut output: impl Write) -> Result<(), MyOwnError> {
+fn cut(options: CutOptions, input: impl Read, mut output: impl Write) -> MyOwnResult<()> {
     let mut reader = BufReader::new(input);
     let mut buf = Vec::new();
 

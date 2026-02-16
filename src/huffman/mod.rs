@@ -3,7 +3,7 @@ use std::io::{stdin, stdout, Read, Write};
 use build_your_own_macros::cli_options;
 use targets::HuffmanInput;
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 
 mod bits;
 mod decoder;
@@ -12,7 +12,7 @@ mod targets;
 
 // https://codingchallenges.fyi/challenges/challenge-huffman
 
-pub fn huffman_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn huffman_cli(args: &[&str]) -> MyOwnResult<()> {
     huffman_cli_impl(args, stdin(), stdout())
 }
 
@@ -20,7 +20,7 @@ fn huffman_cli_impl<'a>(
     args: &[&str],
     input: impl Read,
     mut output: impl Write,
-) -> Result<(), MyOwnError> {
+) -> MyOwnResult<()> {
     let options = HuffmanOptions::from_args(args)?;
     let input = HuffmanInput::new(options.input_file, input);
 

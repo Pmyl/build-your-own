@@ -11,7 +11,7 @@ mod tests {
             test_string: String,
             #[option(name = "-d")]
             test_option: Option<String>,
-            #[option(name = "-e")]
+            #[option(name = "-e", alt_names = &["--enumber", "-----super-enumber"])]
             test_number: usize,
             #[option()]
             test_default1: String,
@@ -22,9 +22,16 @@ mod tests {
 
     #[test]
     fn options() {
-        let options =
-            TestOptions::from_args(&vec!["-a", "-c", "something", "-e", "10", "def", "32"])
-                .unwrap();
+        let options = TestOptions::from_args(&vec![
+            "-a",
+            "-c",
+            "something",
+            "-----super-enumber",
+            "10",
+            "def",
+            "32",
+        ])
+        .unwrap();
         assert_eq!(options.test_bool1, true);
         assert_eq!(options.test_bool2, false);
         assert_eq!(options.test_string, "something");

@@ -3,11 +3,11 @@ use std::io::{stdin, Read};
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 
 // https://codingchallenges.fyi/challenges/challenge-json-checker
 
-pub fn json_checker_cli(_: &[&str]) -> Result<(), MyOwnError> {
+pub fn json_checker_cli(_: &[&str]) -> MyOwnResult<()> {
     let result = json_checker_cli_impl(stdin())?;
 
     if let JsonCheckerResult::Pass = result {
@@ -17,7 +17,7 @@ pub fn json_checker_cli(_: &[&str]) -> Result<(), MyOwnError> {
     }
 }
 
-fn json_checker_cli_impl(mut reader: impl Read) -> Result<JsonCheckerResult, MyOwnError> {
+fn json_checker_cli_impl(mut reader: impl Read) -> MyOwnResult<JsonCheckerResult> {
     let mut json = String::new();
     reader.read_to_string(&mut json)?;
 

@@ -1,11 +1,11 @@
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 use cursive::view::Scrollable;
 use cursive::views::{Dialog, SelectView};
 use cursive::{Cursive, CursiveExt};
 use std::io::{stderr, stdin, stdout, IsTerminal, Read, Write};
 
 // My idea!
-pub fn sl_cli(_: &[&str]) -> Result<(), MyOwnError> {
+pub fn sl_cli(_: &[&str]) -> MyOwnResult<()> {
     if stdin().is_terminal() {
         show_err_and_wait_for_exit("Nothing to read from stdin")
     } else {
@@ -13,7 +13,7 @@ pub fn sl_cli(_: &[&str]) -> Result<(), MyOwnError> {
     }
 }
 
-fn sl(mut input: impl Read, mut output: impl Write) -> Result<(), MyOwnError> {
+fn sl(mut input: impl Read, mut output: impl Write) -> MyOwnResult<()> {
     let mut buf = String::new();
     input.read_to_string(&mut buf)?;
     let lines = buf.lines().collect::<Vec<&str>>();

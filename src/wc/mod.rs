@@ -1,15 +1,15 @@
 use std::io::{BufRead, BufReader, Read, Write};
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnResult};
 
 // https://codingchallenges.fyi/challenges/challenge-wc
 
-pub fn wc_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn wc_cli(args: &[&str]) -> MyOwnResult<()> {
     wc_cli_impl(args, std::io::stdin(), std::io::stdout())
 }
 
-fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> Result<(), MyOwnError> {
+fn wc_cli_impl(args: &[&str], stdin: impl Read, mut stdout: impl Write) -> MyOwnResult<()> {
     let cli_options = WcCliOptions::from_args(args)?;
 
     let result = if let Some(filepath) = cli_options.filepath {
@@ -55,7 +55,7 @@ pub struct WcResult {
     characters: usize,
 }
 
-pub fn wc(reader: impl Read) -> Result<WcResult, MyOwnError> {
+pub fn wc(reader: impl Read) -> MyOwnResult<WcResult> {
     let mut lines = 0;
     let mut bytes = 0;
     let mut words = 0;
@@ -158,7 +158,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn wc_cli_options_cases() -> Result<(), MyOwnError> {
+    fn wc_cli_options_cases() -> MyOwnResult<()> {
         // All true
         let cli_options = WcCliOptions::from_args(&["-c", "-l", "-w", "-m", "test.txt"])?;
         assert_eq!(cli_options.filepath, Some("test.txt"));

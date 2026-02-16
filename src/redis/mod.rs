@@ -1,5 +1,5 @@
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 use build_your_own_utils::thread_pool::ScopedThreadPool;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -12,7 +12,7 @@ use std::{
 };
 // https://codingchallenges.fyi/challenges/challenge-redis
 
-pub fn redis_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn redis_cli(args: &[&str]) -> MyOwnResult<()> {
     let redis_config = RedisConfig::from_args(args)?;
     let listener = TcpListener::bind(format!("127.0.0.1:{}", redis_config.port))?;
     println!("Listening on port {}", redis_config.port);
@@ -81,7 +81,7 @@ impl Redis {
         input: &str,
         mut output: impl Write,
         time_provider: &impl TimeProvider,
-    ) -> Result<(), MyOwnError> {
+    ) -> MyOwnResult<()> {
         let arguments = parse_input(input);
 
         let first_argument = arguments[0];

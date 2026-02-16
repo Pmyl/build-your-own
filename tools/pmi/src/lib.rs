@@ -9,13 +9,13 @@ use std::{
 use build_your_own_macros::cli_options;
 use build_your_own_utils::{
     fuzzy_search::fuzzy_search,
-    my_own_error::{DescribableError, MyOwnError},
+    my_own_error::{DescribableError, MyOwnError, MyOwnResult},
 };
 
 use crate::sources::{Source, search_source_with_application};
 
 // My idea!
-pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
     let options = InstallOptions::from_args(args)?;
 
     if options.show_path {
@@ -112,7 +112,7 @@ pub fn pmi_cli(args: &[&str]) -> Result<(), MyOwnError> {
     }
 }
 
-fn confirm_application<'a>(applications: &[Application<'a>]) -> Result<usize, MyOwnError> {
+fn confirm_application<'a>(applications: &[Application<'a>]) -> MyOwnResult<usize> {
     println!("# Found {} alternatives", applications.len());
     for (i, app) in applications.iter().enumerate() {
         println!("{}. {}", i + 1, app.source);
@@ -133,7 +133,7 @@ fn confirm_application<'a>(applications: &[Application<'a>]) -> Result<usize, My
 struct Installer<'a>(Applications<'a>);
 
 impl<'a> Installer<'a> {
-    fn install_all(self) -> Result<(), MyOwnError> {
+    fn install_all(self) -> MyOwnResult<()> {
         println!("## Ready to install all applications");
 
         for application in self.0.list {
@@ -146,7 +146,7 @@ impl<'a> Installer<'a> {
         Ok(())
     }
 
-    fn uninstall_all(mut self) -> Result<(), MyOwnError> {
+    fn uninstall_all(mut self) -> MyOwnResult<()> {
         println!("## Ready to uninstall all applications");
 
         for application in &self.0.list {
@@ -162,7 +162,7 @@ impl<'a> Installer<'a> {
         Ok(())
     }
 
-    fn install(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+    fn install(mut self, application: Application<'a>) -> MyOwnResult<()> {
         let already_installed = self.0.is_already_installed(&application);
 
         if let Some(_) = already_installed.perfect_match {
@@ -203,7 +203,7 @@ impl<'a> Installer<'a> {
         Ok(())
     }
 
-    fn uninstall(mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+    fn uninstall(mut self, application: Application<'a>) -> MyOwnResult<()> {
         if let None = self.0.get_matching_application(&application) {
             return Err(MyOwnError::ActualError(
                 "Application is not installed or not installed through same source".into(),
@@ -223,10 +223,7 @@ impl<'a> Installer<'a> {
         Ok(())
     }
 
-    fn identify_application(
-        &self,
-        application: &'a str,
-    ) -> Result<Vec<Application<'a>>, MyOwnError> {
+    fn identify_application(&self, application: &'a str) -> MyOwnResult<Vec<Application<'a>>> {
         Ok(search_source_with_application(application)?
             .into_iter()
             .map(|s| Application::<'a>::new(s, application, vec![]))
@@ -234,7 +231,7 @@ impl<'a> Installer<'a> {
     }
 }
 
-fn ask_permission(question: &str) -> Result<(), MyOwnError> {
+fn ask_permission(question: &str) -> MyOwnResult<()> {
     ask_input(question).and_then(|answer| {
         Ok(if answer.trim().to_lowercase() == "n" {
             return Err(MyOwnError::EarlyExit);
@@ -242,7 +239,7 @@ fn ask_permission(question: &str) -> Result<(), MyOwnError> {
     })
 }
 
-fn ask_input(question: &str) -> Result<String, MyOwnError> {
+fn ask_input(question: &str) -> MyOwnResult<String> {
     let mut tty = BufReader::new(File::open("/dev/tty")?);
     let mut tty_out = File::create("/dev/tty")?;
 
@@ -304,7 +301,7 @@ fn applications_file() -> String {
 }
 
 impl<'a> Applications<'a> {
-    fn from_file() -> Result<Self, MyOwnError> {
+    fn from_file() -> MyOwnResult<Self> {
         std::fs::create_dir_all(applications_folder())?;
         let file_reader = OpenOptions::new()
             .write(true)
@@ -320,7 +317,7 @@ impl<'a> Applications<'a> {
         Ok(Applications { list })
     }
 
-    fn from_stdin() -> Result<Self, MyOwnError> {
+    fn from_stdin() -> MyOwnResult<Self> {
         let list = Applications::<'a>::list_from_reader(stdin())?;
         let list_source = "stdin".to_string();
 
@@ -328,7 +325,7 @@ impl<'a> Applications<'a> {
         Ok(Applications { list })
     }
 
-    fn list_from_reader(mut reader: impl Read) -> Result<Vec<Application<'a>>, MyOwnError> {
+    fn list_from_reader(mut reader: impl Read) -> MyOwnResult<Vec<Application<'a>>> {
         let mut content = String::new();
         reader
             .read_to_string(&mut content)
@@ -372,7 +369,7 @@ impl<'a> Applications<'a> {
         Ok(applications)
     }
 
-    fn add(&mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+    fn add(&mut self, application: Application<'a>) -> MyOwnResult<()> {
         let mut file = OpenOptions::new()
             .write(true)
             .append(true)
@@ -393,7 +390,7 @@ impl<'a> Applications<'a> {
         Ok(())
     }
 
-    fn remove(&mut self, application: Application<'a>) -> Result<(), MyOwnError> {
+    fn remove(&mut self, application: Application<'a>) -> MyOwnResult<()> {
         let mut file = OpenOptions::new()
             .write(true)
             .append(false)
@@ -422,7 +419,7 @@ impl<'a> Applications<'a> {
         Ok(())
     }
 
-    fn remove_all(&mut self) -> Result<(), MyOwnError> {
+    fn remove_all(&mut self) -> MyOwnResult<()> {
         let mut file = OpenOptions::new()
             .write(true)
             .append(false)

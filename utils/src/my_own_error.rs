@@ -10,6 +10,8 @@ macro_rules! ActualError {
     };
 }
 
+pub type MyOwnResult<TValue> = Result<TValue, MyOwnError>;
+
 #[derive(Debug)]
 pub enum MyOwnError {
     EarlyExit,
@@ -22,37 +24,37 @@ pub trait DescribableError<T, E> {
     fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
-    ) -> Result<T, MyOwnError>;
+    ) -> MyOwnResult<T>;
 
     fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
         self,
         with_description: F,
-    ) -> Result<T, MyOwnError>;
+    ) -> MyOwnResult<T>;
 }
 
 impl<'a, T, E: Error + 'static> DescribableError<T, E> for Result<T, E> {
     fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
-    ) -> Result<T, MyOwnError> {
+    ) -> MyOwnResult<T> {
         self.map_err(|e| MyOwnError::ActualErrorWithDescription(e.into(), description.into()))
     }
 
     fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
         self,
         with_description: F,
-    ) -> Result<T, MyOwnError> {
+    ) -> MyOwnResult<T> {
         self.map_err(|e| {
             MyOwnError::ActualErrorWithDescription(e.into(), with_description().into())
         })
     }
 }
 
-impl<'a, T> DescribableError<T, MyOwnError> for Result<T, MyOwnError> {
+impl<'a, T> DescribableError<T, MyOwnError> for MyOwnResult<T> {
     fn error_description<TDescription: Into<String>>(
         self,
         description: TDescription,
-    ) -> Result<T, MyOwnError> {
+    ) -> MyOwnResult<T> {
         self.map_err(|e| match e {
             MyOwnError::EarlyExit => e,
             err @ _ => MyOwnError::MyOwnErrorWithDescription(Box::new(err), description.into()),
@@ -62,7 +64,7 @@ impl<'a, T> DescribableError<T, MyOwnError> for Result<T, MyOwnError> {
     fn with_error_description<S: Into<String>, F: FnOnce() -> S>(
         self,
         with_description: F,
-    ) -> Result<T, MyOwnError> {
+    ) -> MyOwnResult<T> {
         self.map_err(|e| match e {
             MyOwnError::EarlyExit => e,
             err @ _ => {

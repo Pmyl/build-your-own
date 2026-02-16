@@ -4,14 +4,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnResult};
 
 use crate::{ApplicationInstructions, applications_folder, sources::SourceManager};
 
 pub(crate) struct ExecutableFile;
 
 impl SourceManager for ExecutableFile {
-    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let file_path_string = application
             .args
             .first()
@@ -62,11 +62,11 @@ impl SourceManager for ExecutableFile {
         Ok(())
     }
 
-    fn uninstall(&self, _: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn uninstall(&self, _: &ApplicationInstructions) -> MyOwnResult<()> {
         todo!("Just go and delete it manually from both /usr/bin and pmi folder")
     }
 
-    fn has_application(&self, _: &str) -> Result<bool, MyOwnError> {
+    fn has_application(&self, _: &str) -> MyOwnResult<bool> {
         Ok(false)
     }
 }

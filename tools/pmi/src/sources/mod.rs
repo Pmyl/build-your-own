@@ -8,16 +8,16 @@ pub(crate) mod snap;
 use std::{fmt::Display, str::FromStr};
 
 use crate::ApplicationInstructions;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
 use crate::sources::{
     apt::Apt, brew::Brew, cargo::Cargo, executable_file::ExecutableFile, npm::Npm, snap::Snap,
 };
 
 pub(crate) trait SourceManager {
-    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError>;
-    fn uninstall(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError>;
-    fn has_application(&self, application: &str) -> Result<bool, MyOwnError>;
+    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()>;
+    fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()>;
+    fn has_application(&self, application: &str) -> MyOwnResult<bool>;
 }
 
 macro_rules! build_sources {
@@ -35,7 +35,7 @@ macro_rules! build_sources {
         }
 
         impl Source {
-            pub(crate) fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+            pub(crate) fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
                 match self {
                     $(
                         $(#[$meta])*
@@ -44,7 +44,7 @@ macro_rules! build_sources {
                 }
             }
 
-            pub(crate) fn uninstall(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+            pub(crate) fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
                 match self {
                     $(
                         $(#[$meta])*
@@ -79,7 +79,7 @@ macro_rules! build_sources {
             }
         }
 
-        pub(crate) fn search_source_with_application(application: &str) -> Result<Vec<Source>, MyOwnError> {
+        pub(crate) fn search_source_with_application(application: &str) -> MyOwnResult<Vec<Source>> {
             let mut sources = vec![];
             $(
                 $(#[$meta])*

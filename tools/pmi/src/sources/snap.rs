@@ -3,14 +3,14 @@ use std::{
     process::Command,
 };
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
 use crate::{ApplicationInstructions, sources::SourceManager};
 
 pub(crate) struct Snap;
 
 impl SourceManager for Snap {
-    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let status = Command::new("snap")
             .args(
                 &vec!["install", &application.application]
@@ -29,7 +29,7 @@ impl SourceManager for Snap {
         }
     }
 
-    fn uninstall(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let status = Command::new("snap")
             .args(&vec!["remove", &application.application])
             .stdout(stdout())

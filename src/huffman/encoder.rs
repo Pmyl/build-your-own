@@ -1,4 +1,4 @@
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 
 use super::bits::{Bits, BitsWriter};
 use super::targets::HuffmanInput;
@@ -8,7 +8,7 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{Read, Write};
 
-pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnError> {
+pub fn encode(input: HuffmanInput, output: &mut impl Write) -> MyOwnResult<()> {
     let frequencies = huffman_frequencies(&mut input.take())?;
     let root = huffman_tree(frequencies);
     let table = huffman_prefix_code_table(root.clone());
@@ -18,7 +18,7 @@ pub fn encode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnE
     Ok(())
 }
 
-fn huffman_frequencies(input: &mut impl Read) -> Result<[usize; 256], MyOwnError> {
+fn huffman_frequencies(input: &mut impl Read) -> MyOwnResult<[usize; 256]> {
     let mut frequencies: [usize; 256] = [0; 256];
     let mut buf = vec![0u8; 10];
 
@@ -89,7 +89,7 @@ fn write_huffman_file(
     output: &mut impl Write,
     table: HuffmanPrefixCodeTable,
     root: HuffmanNode,
-) -> Result<(), MyOwnError> {
+) -> MyOwnResult<()> {
     let mut nodes_to_process: Vec<HuffmanNode> = vec![root];
     let mut writer = BitsWriter::new(output);
 

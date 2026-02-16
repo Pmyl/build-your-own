@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::{Read, Write};
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Bits {
@@ -79,7 +79,7 @@ impl<T: Write> BitsWriter<T> {
         }
     }
 
-    pub fn write(&mut self, bits: &Bits) -> Result<(), MyOwnError> {
+    pub fn write(&mut self, bits: &Bits) -> MyOwnResult<()> {
         for i in 0..bits.amount_of_bits {
             if self.mask == 0b00000000 {
                 self.flush()?;
@@ -94,7 +94,7 @@ impl<T: Write> BitsWriter<T> {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> Result<(), MyOwnError> {
+    pub fn flush(&mut self) -> MyOwnResult<()> {
         let mut buf = [self.current_byte];
         self.writer.write(&mut buf)?;
         self.current_byte = 0b00000000;
@@ -104,7 +104,7 @@ impl<T: Write> BitsWriter<T> {
         Ok(())
     }
 
-    pub fn final_flush_with_offset(&mut self) -> Result<(), MyOwnError> {
+    pub fn final_flush_with_offset(&mut self) -> MyOwnResult<()> {
         let mut buf = [self.mask];
         if self.mask != 0b10000000 {
             self.flush()?;
@@ -130,7 +130,7 @@ pub struct BitsReader<T: Read> {
 }
 
 impl<T: Read> BitsReader<T> {
-    pub fn new(mut reader: T) -> Result<Self, MyOwnError> {
+    pub fn new(mut reader: T) -> MyOwnResult<Self> {
         let mut buf = [0u8; 1];
         reader
             .read_exact(&mut buf)

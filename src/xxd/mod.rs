@@ -4,11 +4,11 @@ use std::{
 };
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::{DescribableError, MyOwnError};
+use build_your_own_utils::my_own_error::{DescribableError, MyOwnResult};
 
 // https://codingchallenges.fyi/challenges/challenge-xxd
 
-pub fn xxd_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn xxd_cli(args: &[&str]) -> MyOwnResult<()> {
     let options = XxdCliOptions::from_args(args)?;
 
     if let Some(input_file) = options.input_file {
@@ -49,11 +49,7 @@ cli_options! {
     }
 }
 
-fn xxd_cli_impl(
-    options: XxdOptions,
-    input: impl Read,
-    output: impl Write,
-) -> Result<(), MyOwnError> {
+fn xxd_cli_impl(options: XxdOptions, input: impl Read, output: impl Write) -> MyOwnResult<()> {
     if options.to_binary {
         xxd_to_binary(input, output)
     } else {
@@ -65,7 +61,7 @@ fn xxd_to_hex(
     options: XxdOptions,
     mut input: impl Read,
     mut output: impl Write,
-) -> Result<(), MyOwnError> {
+) -> MyOwnResult<()> {
     let mut offset = options.start_offset;
     let grouping = options
         .grouping
@@ -163,7 +159,7 @@ fn xxd_to_hex(
     Ok(())
 }
 
-fn xxd_to_binary(input: impl Read, mut output: impl Write) -> Result<(), MyOwnError> {
+fn xxd_to_binary(input: impl Read, mut output: impl Write) -> MyOwnResult<()> {
     let mut reader = BufReader::new(input);
     loop {
         let mut prefix = [0; 10];

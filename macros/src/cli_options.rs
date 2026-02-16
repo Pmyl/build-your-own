@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::iter::{once, Peekable};
 
 use proc_macro2::{token_stream::IntoIter, Group, Ident, Literal, Punct, Span, TokenTree};
 use quote::{quote, ToTokens};
@@ -48,7 +48,7 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
 
     let from_args_implementations = quote! {
         impl #lifetime_generics #name #lifetime_generics {
-            fn from_args(args: &[&#lifetime str]) -> Result<Self, build_your_own_utils::my_own_error::MyOwnError> {
+            fn from_args(args: &[&#lifetime str]) -> build_your_own_utils::my_own_error::MyOwnResult<Self> {
                 let mut options = <#name as core::default::Default>::default();
 
                 let mut args = args.iter();
@@ -164,6 +164,22 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
             (Some(option_name), false) => {
                 let parse_arg = parse_arg(&f);
                 let extract_arg_value = extract_arg_value();
+                let all_names = once(option_name).chain(f.1.alt_names.as_deref().unwrap_or(&[]));
+
+                option_parsers.append(
+                    &mut all_names
+                        .map(|alt_name| {
+                            quote! {
+                                let option_name = #alt_name;
+                                if arg.starts_with(option_name) {
+                                    #extract_arg_value
+                                    self.#field_name = #parse_arg;
+                                    return Ok(true);
+                                }
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
                 option_parsers.push(quote! {
                     let option_name = #option_name;
                     if arg.starts_with(option_name) {
@@ -533,6 +549,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
                     "name" => attribute.name = Some(field.value_as_string()),
                     "delimiters" => attribute.delimiters = Some(field.value_as_char_vec()),
                     "default" => attribute.default = Some(field.value),
+                    "alt_names" => attribute.alt_names = Some(field.value_as_string_vec()),
                     unhandled => panic!("unhandled attribute field `{}`", unhandled),
                 },
                 None => break,
@@ -711,41 +728,55 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                     .stream()
                     .into_iter()
                     .peekable();
-                let mut values = Vec::<char>::new();
+                let mut values = Vec::<String>::new();
                 let literal =
                     match_literal(&mut slice_group).expect("expected a literal after `&[`");
-                values.push(
-                    literal
-                        .to_string()
-                        .strip_prefix("'")
-                        .unwrap()
-                        .strip_suffix("'")
-                        .unwrap()
-                        .parse()
-                        .expect("expected a char literal"),
-                );
+                values.push(literal.to_string());
                 loop {
                     if let None = maybe_match_punct_value(&mut slice_group, ',') {
                         break;
                     }
                     let literal = match_literal(&mut slice_group)
                         .expect("expected a literal after `,` in `&[]`");
-                    values.push(
-                        literal
-                            .to_string()
-                            .strip_prefix("'")
-                            .unwrap()
-                            .strip_suffix("'")
-                            .unwrap()
-                            .parse()
-                            .expect("expected a char literal"),
-                    );
+                    values.push(literal.to_string());
                 }
                 if let Some(_) = slice_group.next() {
                     panic!("unexpected token in `&[]` group");
                 }
 
-                Some(MyOwnValue::CharVec(values))
+                let quote = match &values[0].as_bytes()[0] {
+                    b'\'' => '\'',
+                    b'"' => '"',
+                    _ => panic!("expected either a char literal or a string literal in vec"),
+                };
+                Some(match quote {
+                    '\'' => MyOwnValue::CharVec(
+                        values
+                            .into_iter()
+                            .map(|v| {
+                                v.strip_prefix("'")
+                                    .unwrap()
+                                    .strip_suffix("'")
+                                    .unwrap()
+                                    .parse::<char>()
+                                    .expect("expected a char literal")
+                            })
+                            .collect(),
+                    ),
+                    '"' => MyOwnValue::StringVec(
+                        values
+                            .into_iter()
+                            .map(|v| {
+                                v.strip_prefix("\"")
+                                    .unwrap()
+                                    .strip_suffix("\"")
+                                    .unwrap()
+                                    .to_string()
+                            })
+                            .collect(),
+                    ),
+                    _ => unreachable!("based on code above"),
+                })
             } else {
                 panic!("expected `&` punct only");
             }
@@ -878,6 +909,7 @@ struct MyOwnEnumFieldVariantAttribute {
 #[derive(Debug, Default)]
 struct MyOwnFieldAttribute {
     name: Option<String>,
+    alt_names: Option<Vec<String>>,
     delimiters: Option<Vec<char>>,
     default: Option<MyOwnValue>,
 }
@@ -913,6 +945,14 @@ impl MyOwnFieldAttribute {
             }
 
             self.default = Some(default);
+        }
+
+        if let Some(alt_names) = attribute.alt_names {
+            if let Some(self_alt_names) = &self.alt_names {
+                panic!("Alt names already specified to be {:?}", self_alt_names);
+            }
+
+            self.alt_names = Some(alt_names);
         }
     }
 }
@@ -952,6 +992,17 @@ impl MyOwnAttributeField {
             self.name
         );
     }
+
+    fn value_as_string_vec(self) -> Vec<String> {
+        if let MyOwnValue::StringVec(value) = self.value {
+            return value;
+        }
+
+        panic!(
+            "expected value of attribute field {} to be a string vector",
+            self.name
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -960,6 +1011,7 @@ enum MyOwnValue {
     String(String),
     Bool(bool),
     CharVec(Vec<char>),
+    StringVec(Vec<String>),
     Path(Vec<Ident>),
     Number(Literal),
 }
@@ -978,6 +1030,11 @@ impl ToTokens for MyOwnValue {
                 });
             }
             MyOwnValue::CharVec(values) => {
+                tokens.extend(quote! {
+                    vec![#(#values),*]
+                });
+            }
+            MyOwnValue::StringVec(values) => {
                 tokens.extend(quote! {
                     vec![#(#values),*]
                 });

@@ -1,10 +1,10 @@
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 
 use super::bits::BitsReader;
 use super::targets::HuffmanInput;
 use std::io::{Read, Write};
 
-pub fn decode(input: HuffmanInput, output: &mut impl Write) -> Result<(), MyOwnError> {
+pub fn decode(input: HuffmanInput, output: &mut impl Write) -> MyOwnResult<()> {
     let mut reader = BitsReader::new(input.take())?;
     let root = decode_tree(&mut reader);
 

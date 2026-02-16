@@ -3,14 +3,14 @@ use std::{
     process::Command,
 };
 
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
 use crate::{ApplicationInstructions, sources::SourceManager};
 
 pub(crate) struct Apt;
 
 impl SourceManager for Apt {
-    fn install(&self, application: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
         let status = Command::new("apt")
             .args(
                 &vec!["install", &application.application]
@@ -29,11 +29,11 @@ impl SourceManager for Apt {
         }
     }
 
-    fn uninstall(&self, _: &ApplicationInstructions) -> Result<(), MyOwnError> {
+    fn uninstall(&self, _: &ApplicationInstructions) -> MyOwnResult<()> {
         todo!("Uninstall with apt is hard, I'll do it later")
     }
 
-    fn has_application(&self, application: &str) -> Result<bool, MyOwnError> {
+    fn has_application(&self, application: &str) -> MyOwnResult<bool> {
         println!("# Apt: Search application...");
         let output = Command::new("apt")
             .args(&vec!["show", application])

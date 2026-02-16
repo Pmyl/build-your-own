@@ -4,7 +4,7 @@ use std::{
 };
 
 use build_your_own_macros::cli_options;
-use build_your_own_utils::my_own_error::MyOwnError;
+use build_your_own_utils::my_own_error::MyOwnResult;
 use crossterm::{
     cursor::{RestorePosition, SavePosition},
     event::{self, KeyCode, KeyEvent, KeyModifiers},
@@ -14,7 +14,7 @@ use crossterm::{
 };
 
 // My idea!
-pub fn timer_cli(args: &[&str]) -> Result<(), MyOwnError> {
+pub fn timer_cli(args: &[&str]) -> MyOwnResult<()> {
     let options = TimerOptions::from_args(args)?;
     if let Some(time) = options.time {
         start_timer(stdout(), parse_duration(time)?)?;
@@ -24,7 +24,7 @@ pub fn timer_cli(args: &[&str]) -> Result<(), MyOwnError> {
     Ok(())
 }
 
-fn start_stopwatch(mut output: impl Write) -> Result<(), MyOwnError> {
+fn start_stopwatch(mut output: impl Write) -> MyOwnResult<()> {
     terminal::enable_raw_mode()?;
     let frame_time = Duration::from_millis(50);
     execute!(output, SavePosition)?;
@@ -81,7 +81,7 @@ fn start_stopwatch(mut output: impl Write) -> Result<(), MyOwnError> {
     Ok(())
 }
 
-fn start_timer(mut output: impl Write, time: Duration) -> Result<(), MyOwnError> {
+fn start_timer(mut output: impl Write, time: Duration) -> MyOwnResult<()> {
     terminal::enable_raw_mode()?;
     let frame_time = Duration::from_millis(50);
     execute!(output, SavePosition)?;
@@ -123,7 +123,7 @@ fn start_timer(mut output: impl Write, time: Duration) -> Result<(), MyOwnError>
     Ok(())
 }
 
-fn parse_duration(time: &str) -> Result<Duration, MyOwnError> {
+fn parse_duration(time: &str) -> MyOwnResult<Duration> {
     let mut n: u64 = 0;
     let mut measurement = "";
     for (i, byte) in time.bytes().enumerate() {
