@@ -13,6 +13,8 @@ mod tests {
             test_option: Option<String>,
             #[option(name = "-e", alt_names = &["--enumber", "-----super-enumber"])]
             test_number: usize,
+            #[option(name = "-f", alt_names = &["--ff"])]
+            test_number2: usize,
             #[option()]
             test_default1: String,
             #[option()]
@@ -28,6 +30,7 @@ mod tests {
             "something",
             "-----super-enumber",
             "10",
+            "--ff22",
             "def",
             "32",
         ])
@@ -37,6 +40,7 @@ mod tests {
         assert_eq!(options.test_string, "something");
         assert_eq!(options.test_option.is_none(), true);
         assert_eq!(options.test_number, 10);
+        assert_eq!(options.test_number2, 22);
         assert_eq!(options.test_default1, "def");
         assert_eq!(options.test_default2.unwrap(), 32);
     }

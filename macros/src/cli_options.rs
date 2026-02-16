@@ -180,14 +180,6 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
                         })
                         .collect::<Vec<_>>(),
                 );
-                option_parsers.push(quote! {
-                    let option_name = #option_name;
-                    if arg.starts_with(option_name) {
-                        #extract_arg_value
-                        self.#field_name = #parse_arg;
-                        return Ok(true);
-                    }
-                })
             }
             (Some(option_name), true) => {
                 let parse_arg = if let MyOwnType::Option { .. } = f.0.ty {
@@ -195,13 +187,21 @@ fn update_arg(strct: &MyOwnStruct) -> proc_macro2::TokenStream {
                 } else {
                     quote! { true }
                 };
-                option_parsers.push(quote! {
-                    let option_name = #option_name;
-                    if arg.starts_with(option_name) {
-                        self.#field_name = #parse_arg;
-                        return Ok(true);
-                    }
-                })
+                let all_names = once(option_name).chain(f.1.alt_names.as_deref().unwrap_or(&[]));
+
+                option_parsers.append(
+                    &mut all_names
+                        .map(|alt_name| {
+                            quote! {
+                                let option_name = #alt_name;
+                                if arg.starts_with(option_name) {
+                                    self.#field_name = #parse_arg;
+                                    return Ok(true);
+                                }
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
             (None, false) => {
                 let parse_arg = parse_arg(&f);
