@@ -2,6 +2,7 @@ pub(crate) mod apt;
 pub(crate) mod brew;
 pub(crate) mod cargo;
 pub(crate) mod executable_file;
+pub(crate) mod install_sh;
 pub(crate) mod npm;
 pub(crate) mod snap;
 
@@ -11,7 +12,8 @@ use crate::ApplicationInstructions;
 use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
 use crate::sources::{
-    apt::Apt, brew::Brew, cargo::Cargo, executable_file::ExecutableFile, npm::Npm, snap::Snap,
+    apt::Apt, brew::Brew, cargo::Cargo, executable_file::ExecutableFile, install_sh::InstallSh,
+    npm::Npm, snap::Snap,
 };
 
 pub(crate) trait SourceManager {
@@ -111,4 +113,7 @@ build_sources!(Source {
 
     #[cfg(feature = "executable_file")]
     ExecutableFile ("executable_file"),
+
+    #[cfg(feature = "install_sh")]
+    InstallSh ("install_sh"),
 });
