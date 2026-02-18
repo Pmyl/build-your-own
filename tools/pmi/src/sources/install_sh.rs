@@ -13,46 +13,81 @@ pub(crate) struct InstallSh;
 
 impl SourceManager for InstallSh {
     fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
-        let file_path_string = application
+        let file_path = if application
             .args
             .first()
-            .ok_or_else(|| "Install sh installation should have one argument containing the path to the file")?
-            .to_string();
-        let file_path = Path::new(&file_path_string);
-        if !file_path.is_file() {
-            return Err(format!(
-                "File path for instll sh installation is not a file: [{}]",
-                file_path.to_string_lossy()
-            )
-            .into());
-        }
+            .map_or(false, |arg| arg == "--curl")
+        {
+            let url = application
+                .args
+                .get(1)
+                .ok_or_else(|| "curl command requires a URL argument")?;
 
-        let file_path = to_absolute(file_path);
-        let cached_file_path =
-            to_absolute(&Path::new(&applications_folder()).join(file_path.file_name().unwrap()));
+            let temp_file = std::env::temp_dir().join("downloaded_script.sh");
 
-        if file_path == cached_file_path {
-            println!(
-                "# File already in applications folder {}",
-                applications_folder()
-            );
-        } else {
-            println!(
-                "# Moving file {} to {}",
-                file_path.to_string_lossy(),
-                cached_file_path.to_string_lossy()
-            );
-            if fs::rename(&file_path, &cached_file_path).is_err() {
-                {
-                    fs::copy(&file_path, &cached_file_path)?;
-                    fs::remove_file(&file_path)
-                }
-                .with_error_description(|| "When moving executable file in applications folder")?;
+            let status = Command::new("curl")
+                .args(&[
+                    "-fsSL",
+                    url,
+                    "-o",
+                    &temp_file.to_string_lossy().into_owned(),
+                ])
+                .status()?;
+
+            if !status.success() {
+                return Err(MyOwnError::ActualError(
+                    format!("Failed to download file from {}", url).into(),
+                ));
             }
-        }
+
+            to_absolute(&temp_file)
+        } else {
+            let file_path_string = application
+                .args
+                .first()
+                .ok_or_else(|| "Install sh installation should have one argument containing the path to the file")?
+                .to_string();
+            let file_path = Path::new(&file_path_string);
+            if !file_path.is_file() {
+                return Err(format!(
+                    "File path for instll sh installation is not a file: [{}]",
+                    file_path.to_string_lossy()
+                )
+                .into());
+            }
+
+            let file_path = to_absolute(file_path);
+            let cached_file_path = to_absolute(
+                &Path::new(&applications_folder()).join(file_path.file_name().unwrap()),
+            );
+
+            if file_path == cached_file_path {
+                println!(
+                    "# File already in applications folder {}",
+                    applications_folder()
+                );
+            } else {
+                println!(
+                    "# Moving file {} to {}",
+                    file_path.to_string_lossy(),
+                    cached_file_path.to_string_lossy()
+                );
+                if fs::rename(&file_path, &cached_file_path).is_err() {
+                    {
+                        fs::copy(&file_path, &cached_file_path)?;
+                        fs::remove_file(&file_path)
+                    }
+                    .with_error_description(
+                        || "When moving executable file in applications folder",
+                    )?;
+                }
+            }
+
+            cached_file_path
+        };
 
         let status = Command::new("sh")
-            .args(&vec![cached_file_path])
+            .args(&vec![file_path])
             .stdout(stdout())
             .stderr(stderr())
             .status()?;
