@@ -135,7 +135,7 @@ fn confirm_application<'a>(applications: &[Application<'a>]) -> MyOwnResult<usiz
         if answer == 0 || answer > applications.len() {
             Err(MyOwnError::ActualError("Answer outside range".into()))
         } else {
-            Ok(answer)
+            Ok(answer - 1)
         }
     }
 }
