@@ -45,7 +45,6 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
                     println!("Found no matches, aborting");
                     return Ok(());
                 }
-                1 => Some(possible_matches.remove(0)),
                 _ => {
                     let index = confirm_application(&possible_matches)?;
                     Some(possible_matches.remove(index))
@@ -60,14 +59,14 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
         (Some(application), false, true) => installer.uninstall(application),
         (None, true, false) => {
             ask_permission(&format!(
-                "# This operation will not modify the list of installed applications. Do you want to install {} applications? Y/n",
+                "# This operation will not modify the list of installed applications. Do you want to install {} applications? (Y/n)",
                 installer.0.list.len()
             ))?;
             installer.install_all()
         }
         (None, true, true) => {
             ask_permission(&format!(
-                "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? Y/n",
+                "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? (Y/n)",
                 installer.0.list.len()
             ))?;
             installer.uninstall_all()
@@ -113,20 +112,31 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
 }
 
 fn confirm_application<'a>(applications: &[Application<'a>]) -> MyOwnResult<usize> {
-    println!("# Found {} alternatives", applications.len());
-    for (i, app) in applications.iter().enumerate() {
-        println!("{}. {}", i + 1, app.source);
-    }
-    println!();
-    let answer = ask_input(&format!("# Which one?",))?
-        .trim()
-        .parse::<usize>()
-        .error_description("Answer should be a number")?;
+    if let [app] = applications {
+        println!("# Found only in {}", app.source);
+        println!();
+        ask_permission(&format!(
+            "# Do you want to install it using {}? (Y/n)",
+            app.source
+        ))?;
 
-    if answer == 0 || answer > applications.len() {
-        Err(MyOwnError::ActualError("Answer outside range".into()))
+        Ok(0)
     } else {
-        Ok(answer)
+        println!("# Found {} alternatives", applications.len());
+        for (i, app) in applications.iter().enumerate() {
+            println!("{}. {}", i + 1, app.source);
+        }
+        println!();
+        let answer = ask_input(&format!("# Which one?",))?
+            .trim()
+            .parse::<usize>()
+            .error_description("Answer should be a number")?;
+
+        if answer == 0 || answer > applications.len() {
+            Err(MyOwnError::ActualError("Answer outside range".into()))
+        } else {
+            Ok(answer)
+        }
     }
 }
 
@@ -183,7 +193,7 @@ impl<'a> Installer<'a> {
             }
 
             ask_permission(&format!(
-                "# Do you want to still install {} | {} | {}? Y/n",
+                "# Do you want to still install {} | {} | {}? (Y/n)",
                 application.source,
                 application.instructions.application,
                 application.instructions.args.join("&")
