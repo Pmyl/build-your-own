@@ -1,4 +1,7 @@
-use std::iter::{once, Peekable};
+use std::{
+    collections::VecDeque,
+    iter::{once, Peekable},
+};
 
 use proc_macro2::{token_stream::IntoIter, Group, Ident, Literal, Punct, Span, TokenTree};
 use quote::{quote, ToTokens};
@@ -7,7 +10,7 @@ pub fn cli_options(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = proc_macro2::TokenStream::from(input);
 
     let mut tokens = input.into_iter().peekable();
-    let main_struct = match_struct(&mut tokens).expect("expected struct");
+    let main_struct = match_main_struct(&mut tokens).expect("expected main struct");
 
     if let Some(_) = tokens.peek() {
         panic!("expected end of input");
@@ -22,12 +25,13 @@ pub fn cli_options(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     })
 }
 
-fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
-    let name = &main_struct.name;
-    let lifetime = &main_struct.lifetime_token_stream();
+fn impl_code(main_struct: &MyOwnMainStruct) -> proc_macro2::TokenStream {
+    let strct = &main_struct.strct;
+    let name = &strct.name;
+    let lifetime = &strct.lifetime_token_stream();
     let lifetime_generics = lifetime.as_ref().map(|lifetime| quote! { <#lifetime> });
 
-    let mut update_arg_statements = main_struct
+    let mut update_arg_statements = strct
         .structs
         .iter()
         .map(|s| {
@@ -46,6 +50,8 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
         }
     });
 
+    let print_help_sections: proc_macro2::TokenStream = print_help_of_main_struct(&main_struct);
+
     let from_args_implementations = quote! {
         impl #lifetime_generics #name #lifetime_generics {
             fn from_args(args: &[&#lifetime str]) -> build_your_own_utils::my_own_error::MyOwnResult<Self> {
@@ -60,29 +66,177 @@ fn impl_code(main_struct: &MyOwnStruct) -> proc_macro2::TokenStream {
 
                 Ok(options)
             }
+
+            fn print_help(&self, write: &mut impl std::io::Write) -> std::io::Result<()> {
+                #print_help_sections
+                Ok(())
+            }
         }
     };
 
-    let mut update_args_implementations: Vec<proc_macro2::TokenStream> = main_struct
-        .structs
-        .iter()
-        .map(|s| update_arg(&s.strct))
-        .collect();
+    let mut update_args_implementations: Vec<proc_macro2::TokenStream> =
+        strct.structs.iter().map(|s| update_arg(&s.strct)).collect();
 
-    update_args_implementations.push(update_arg(&main_struct));
+    update_args_implementations.push(update_arg(&strct));
 
-    let mut default_implementations: Vec<proc_macro2::TokenStream> = main_struct
+    let mut default_implementations: Vec<proc_macro2::TokenStream> = strct
         .structs
         .iter()
         .map(|s| default_impl(&s.strct))
         .collect();
 
-    default_implementations.push(default_impl(&main_struct));
+    default_implementations.push(default_impl(&strct));
 
     quote! {
         #from_args_implementations
         #(#update_args_implementations)*
         #(#default_implementations)*
+    }
+}
+
+fn print_help_of_main_struct(main_struct: &MyOwnMainStruct) -> proc_macro2::TokenStream {
+    let usage = main_struct
+        .attribute
+        .as_ref()
+        .and_then(|a| a.usage.as_ref())
+        .map(|u| {
+            quote! {
+                writeln!(write, "Usage: {}", #u)?;
+            }
+        });
+    let examples = main_struct
+        .attribute
+        .as_ref()
+        .and_then(|a| a.examples.as_ref())
+        .map(|e| {
+            quote! {
+                #(
+                    writeln!(write, "{}", #e)?;
+                )*
+            }
+        });
+
+    let structs = flatten_structs(&main_struct);
+    let print_struct = print_help_of_structs(structs);
+
+    quote! {
+        #usage
+        writeln!(write)?;
+        #print_struct
+        writeln!(write)?;
+        #examples
+    }
+}
+
+fn flatten_structs<'a>(main_struct: &'a MyOwnMainStruct) -> Vec<&'a MyOwnStruct> {
+    let mut structs = vec![];
+    let mut structs_queue: VecDeque<&MyOwnStruct> = VecDeque::new();
+    structs_queue.push_back(&main_struct.strct);
+    while let Some(s) = structs_queue.pop_front() {
+        structs.push(s);
+        structs_queue.extend(
+            s.structs
+                .iter()
+                .map(|s| &s.strct)
+                .collect::<Vec<&MyOwnStruct>>(),
+        );
+    }
+    structs
+}
+
+fn print_help_of_structs(structs: Vec<&MyOwnStruct>) -> proc_macro2::TokenStream {
+    struct FieldToPrint {
+        flags: String,
+        description: String,
+    }
+    struct StructToPrint {
+        struct_name: String,
+        fields: Vec<FieldToPrint>,
+    }
+    let structs_to_print = structs
+        .iter()
+        .map(|s| {
+            let fields = s
+                .fields
+                .iter()
+                .map(|f| {
+                    let var_name = f.0.name.to_string();
+                    let mut flags = vec![f.1.name.as_ref().unwrap_or(&var_name)];
+                    if let Some(alt_names) = f.1.alt_names.as_ref() {
+                        flags.extend(alt_names);
+                    }
+                    let flags = flags
+                        .into_iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let description = f.1.description.as_ref().cloned().unwrap_or(String::new());
+                    FieldToPrint { flags, description }
+                })
+                .collect::<Vec<_>>();
+
+            StructToPrint {
+                struct_name: s.name.to_string(),
+                fields,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let max_flags_string_size = structs_to_print
+        .iter()
+        .flat_map(|s| &s.fields)
+        .map(|f| f.flags.len())
+        .max()
+        .unwrap_or(0);
+    const MIN_SPACES: usize = 4;
+
+    let sub_structs = structs_to_print
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let title_text = s.struct_name;
+            let title = if i == 0 {
+                quote! {
+                    writeln!(write, "Arguments:")?;
+                }
+            } else {
+                quote! {
+                    writeln!(write, "{}:", #title_text)?;
+                }
+            };
+
+            let fields = s
+                .fields
+                .into_iter()
+                .map(|f| {
+                    let spaces = " ".repeat(max_flags_string_size + MIN_SPACES - f.flags.len());
+                    let flags = f.flags;
+                    let mut description_lines = f.description.lines();
+                    let first_description_line = description_lines
+                        .next()
+                        .map(|l| l.to_string())
+                        .unwrap_or_else(|| String::new());
+                    let description_lines = description_lines.map(|l| {
+                        format!("  {} {}", " ".repeat(max_flags_string_size + MIN_SPACES), l)
+                    });
+                    quote! {
+                        writeln!(write, "  {}{}{}", #flags, #spaces, #first_description_line)?;
+                        #(
+                            writeln!(write, "{}", #description_lines)?;
+                        )*
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            quote! {
+                #title
+                #(#fields)*
+            }
+        })
+        .collect::<Vec<_>>();
+
+    quote! {
+        #(#sub_structs)*
     }
 }
 
@@ -309,8 +463,8 @@ fn extract_arg_value() -> proc_macro2::TokenStream {
     }
 }
 
-fn struct_to_token_stream(main_struct: MyOwnStruct) -> proc_macro2::TokenStream {
-    let mut structs = vec![main_struct];
+fn struct_to_token_stream(main_struct: MyOwnMainStruct) -> proc_macro2::TokenStream {
+    let mut structs = vec![main_struct.strct];
     let mut structs_code = Vec::new();
 
     loop {
@@ -359,6 +513,16 @@ fn struct_to_token_stream(main_struct: MyOwnStruct) -> proc_macro2::TokenStream 
     quote! {
         #(#structs_code)*
     }
+}
+
+fn match_main_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnMainStruct> {
+    let main_struct_attribute = match_main_struct_attribute(tokens);
+    let main_struct = match_struct(tokens)?;
+
+    Some(MyOwnMainStruct {
+        attribute: main_struct_attribute,
+        strct: main_struct,
+    })
 }
 
 fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
@@ -413,6 +577,9 @@ fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
                     match_struct_field(&mut group_tokens).expect("field after enum attributes");
                 enums.push((field, enum_attribute));
             }
+            MyOwnAttribute::MainStruct(_) => {
+                panic!("Unexpected `options` attribute, can only be used on the main struct")
+            }
         }
 
         maybe_match_punct_value(&mut group_tokens, ',');
@@ -429,6 +596,19 @@ fn match_struct(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStruct> {
         enums,
         structs,
     })
+}
+
+fn match_main_struct_attribute(
+    tokens: &mut Peekable<IntoIter>,
+) -> Option<MyOwnMainStructAttribute> {
+    match match_attribute(tokens) {
+        None => None,
+        Some(MyOwnAttribute::MainStruct(attribute)) => Some(attribute),
+        val @ _ => panic!(
+            "Unexpected {:?}, only `options` attribute can be used on the main struct",
+            val
+        ),
+    }
 }
 
 fn match_struct_field(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnStructComponentField> {
@@ -550,6 +730,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
                     "delimiters" => attribute.delimiters = Some(field.value_as_char_vec()),
                     "default" => attribute.default = Some(field.value),
                     "alt_names" => attribute.alt_names = Some(field.value_as_string_vec()),
+                    "descr" => attribute.description = Some(field.value_as_string()),
                     unhandled => panic!("unhandled attribute field `{}`", unhandled),
                 },
                 None => break,
@@ -577,7 +758,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
     } else if attribute_name == "suboptions" {
         let mut group_tokens =
             match_group(&mut attributes_tokens, proc_macro2::Delimiter::Parenthesis)
-                .expect("expected `(` after `option`")
+                .expect("expected `(` after `suboptions`")
                 .stream()
                 .into_iter()
                 .peekable();
@@ -591,7 +772,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
         let suboptions_name = match field {
             Some(field) => match field.name.as_ref() {
                 "name" => field.value_as_string(),
-                unhandled => panic!("unhandled attribute field `{}`", unhandled),
+                unhandled => panic!("unhandled suboptions attribute field `{}`", unhandled),
             },
             None => panic!("expected `name` field in `suboptions` attribute"),
         };
@@ -634,7 +815,7 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
 
                         attribute.default = variant.variant.clone()
                     }
-                    unhandled => panic!("unhandled attribute field `{}`", unhandled),
+                    unhandled => panic!("unhandled enum attribute field `{}`", unhandled),
                 },
                 None => break,
             }
@@ -660,6 +841,43 @@ fn match_attribute(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnAttribute> {
         }
 
         Some(MyOwnAttribute::EnumField(attribute))
+    } else if attribute_name == "options" {
+        let mut group_tokens =
+            match_group(&mut attributes_tokens, proc_macro2::Delimiter::Parenthesis)
+                .expect("expected `(` after `options`")
+                .stream()
+                .into_iter()
+                .peekable();
+
+        if let Some(_) = attributes_tokens.next() {
+            panic!("unexpected attribute, should only have one attribute per #[..] block");
+        };
+
+        let mut attribute = MyOwnMainStructAttribute::default();
+
+        loop {
+            let field = match_attribute_field(&mut group_tokens);
+
+            match field {
+                Some(field) => match field.name.as_ref() {
+                    "usage" => attribute.usage = Some(field.value_as_string()),
+                    "examples" => attribute.examples = Some(field.value_as_string_vec()),
+                    unhandled => panic!("unhandled `options` field `{}`", unhandled),
+                },
+                None => break,
+            }
+
+            if let None = peek_punct_value(&mut group_tokens, ',') {
+                break;
+            }
+            match_punct_value(&mut group_tokens, ',');
+        }
+
+        if let Some(_) = group_tokens.peek() {
+            panic!("unexpected token in attribute, all attributes should be separated by `,`");
+        }
+
+        Some(MyOwnAttribute::MainStruct(attribute))
     } else {
         panic!("unhandled attribute `{}`", attribute_name);
     }
@@ -693,6 +911,7 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                         .replace("\\t", "\t")
                         .replace("\\n", "\n")
                         .replace("\\r", "\r")
+                        .replace("\\\"", "\"")
                         .parse()
                         .expect("expected char to be parseable"),
                 ))
@@ -704,18 +923,17 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                         .expect("expected string to contain \" at the beginning")
                         .strip_suffix("\"")
                         .expect("expected string to contain \" at the end")
+                        .replace("\\t", "\t")
+                        .replace("\\n", "\n")
+                        .replace("\\r", "\r")
+                        .replace("\\\"", "\"")
                         .to_string(),
                 ))
             } else if literal_string == "true" {
                 Some(MyOwnValue::Bool(true))
             } else if literal_string == "false" {
                 Some(MyOwnValue::Bool(false))
-            } else if literal_string
-                .chars()
-                .nth(0)
-                .expect("default should have a value")
-                .is_digit(10)
-            {
+            } else if let Ok(_) = literal_string.parse::<usize>() {
                 Some(MyOwnValue::Number(literal))
             } else {
                 panic!("unexpected literal value {}", literal_string);
@@ -771,6 +989,10 @@ fn match_value(tokens: &mut Peekable<IntoIter>) -> Option<MyOwnValue> {
                                     .unwrap()
                                     .strip_suffix("\"")
                                     .unwrap()
+                                    .replace("\\t", "\t")
+                                    .replace("\\n", "\n")
+                                    .replace("\\r", "\r")
+                                    .replace("\\\"", "\"")
                                     .to_string()
                             })
                             .collect(),
@@ -900,6 +1122,12 @@ impl MyOwnEnumFieldAttribute {
 }
 
 #[derive(Debug, Default)]
+struct MyOwnMainStructAttribute {
+    usage: Option<String>,
+    examples: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default)]
 struct MyOwnEnumFieldVariantAttribute {
     name: Option<String>,
     // TODO: this should just be the Path value?
@@ -912,6 +1140,7 @@ struct MyOwnFieldAttribute {
     alt_names: Option<Vec<String>>,
     delimiters: Option<Vec<char>>,
     default: Option<MyOwnValue>,
+    description: Option<String>,
 }
 
 impl MyOwnFieldAttribute {
@@ -954,6 +1183,14 @@ impl MyOwnFieldAttribute {
 
             self.alt_names = Some(alt_names);
         }
+
+        if let Some(description) = attribute.description {
+            if let Some(self_description) = &self.description {
+                panic!("Description already specified to be {:?}", self_description);
+            }
+
+            self.description = Some(description);
+        }
     }
 }
 
@@ -962,6 +1199,7 @@ enum MyOwnAttribute {
     Field(MyOwnFieldAttribute),
     EnumField(MyOwnEnumFieldAttribute),
     Struct(String),
+    MainStruct(MyOwnMainStructAttribute),
 }
 
 #[derive(Debug)]
@@ -1171,6 +1409,12 @@ struct MyOwnStructComponentField {
 #[derive(Debug)]
 struct MyOwnStructComponentStruct {
     name: Ident,
+    strct: MyOwnStruct,
+}
+
+#[derive(Debug)]
+struct MyOwnMainStruct {
+    attribute: Option<MyOwnMainStructAttribute>,
     strct: MyOwnStruct,
 }
 

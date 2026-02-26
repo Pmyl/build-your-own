@@ -3,7 +3,7 @@ mod sources;
 use std::{
     borrow::Cow,
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Read, Write, stdin},
+    io::{BufRead, BufReader, Read, Write, stdin, stdout},
 };
 
 use build_your_own_macros::cli_options;
@@ -18,24 +18,24 @@ use crate::sources::{Source, search_source_with_application};
 pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
     let options = InstallOptions::from_args(args)?;
 
-    if options.show_path {
+    if options.modes.show_path {
         println!("{}", applications_file());
         return Ok(());
     }
 
-    let applications = if options.applications_file_from_stdin {
+    let applications = if options.flags.applications_file_from_stdin {
         Applications::from_stdin()
     } else {
         Applications::from_file()
     }?;
 
     let installer = Installer(applications);
-    let application = match (options.application, options.source) {
+    let application = match (options.application, &options.source) {
         (Some(application), Some(source)) => {
-            Some(Application::new(source, application, options.args))
+            Some(Application::new(source.clone(), application, &options.args))
         }
         (Some(application), None) => {
-            let mut possible_matches = if options.uninstall {
+            let mut possible_matches = if options.flags.uninstall {
                 installer.0.get_applications_by_name(application)
             } else {
                 installer.identify_application(application)?
@@ -54,7 +54,7 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
         _ => None,
     };
 
-    match (application, options.all, options.uninstall) {
+    match (application, options.modes.all, options.flags.uninstall) {
         (Some(application), false, false) => installer.install(application),
         (Some(application), false, true) => installer.uninstall(application),
         (None, true, false) => {
@@ -72,26 +72,7 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
             installer.uninstall_all()
         }
         _ => {
-            println!("Usage: pmi [-p] [-a] [-u] [-i] [application] [source] [--args]");
-            println!();
-            println!("Arguments:");
-            println!("  application    Name of app/package to install, mandatory without -a");
-            println!("  source         What to use to install the app/package, optional");
-            println!("                   If not provided it will find it and ask for confirmation");
-            println!("  --args         Arguments to pass to the installer, pipe delimited");
-            println!("Flags:");
-            println!("  -u             Uninstall");
-            println!("  -i             Read list of applications from stdin");
-            println!("                   instead of {}", applications_file());
-            println!("Alternate modes:");
-            println!("  -p             Print path of file with list of applications");
-            println!("  -a             Install/Uninstall all applications presents in the list");
-            println!();
-            println!("Example install: pmi tailwindcss npm");
-            println!(
-                "Example install with args: pmi dx-cli cargo --args \"--no-default-features&--features&web,server\""
-            );
-            println!("Example uninstall: pmi -u tailwindcss npm");
+            options.print_help(&mut stdout())?;
             println!();
             if installer.0.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
@@ -236,7 +217,7 @@ impl<'a> Installer<'a> {
     fn identify_application(&self, application: &'a str) -> MyOwnResult<Vec<Application<'a>>> {
         Ok(search_source_with_application(application)?
             .into_iter()
-            .map(|s| Application::<'a>::new(s, application, vec![]))
+            .map(|s| Application::<'a>::new(s, application, &vec![]))
             .collect::<Vec<_>>())
     }
 }
@@ -278,13 +259,14 @@ struct ApplicationInstructions<'a> {
 }
 
 impl<'a> Application<'a> {
-    fn new(source: Source, application: &'a str, args: Vec<&'a str>) -> Self {
+    fn new(source: Source, application: &'a str, args: &Vec<&'a str>) -> Self {
         Self {
             source,
             instructions: ApplicationInstructions {
                 application: Cow::Borrowed(application),
                 args: args
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|arg| Cow::Borrowed(arg))
                     .collect::<Vec<_>>(),
             },
@@ -495,26 +477,40 @@ struct AlreadyInstalled<'a> {
 }
 
 cli_options! {
+    #[options(
+        usage = "pmi [-p] [-a] [-u] [-i] [application] [source] [--args]",
+        examples = &[
+            "Example install: pmi tailwindcss npm",
+            "Example install with args: pmi dx-cli cargo --args \"--no-default-features&--features&web,server\"",
+            "Example uninstall: pmi -u tailwindcss npm"
+        ]
+    )]
     struct InstallOptions<'a> {
-        #[option(name = "-p")]
-        show_path: bool,
-
-        #[option(name = "-u")]
-        uninstall: bool,
-
-        #[option(name = "-i")]
-        applications_file_from_stdin: bool,
-
-        #[option(name = "-a")]
-        all: bool,
-
-        #[option()]
+        #[option(descr = "Name of app/package to install, mandatory without -a")]
         application: Option<&'a str>,
 
-        #[option()]
+        #[option(descr = "What to use to install the app/package, optional\nIf not provided it will find it and ask for confirmation")]
         source: Option<Source>,
 
-        #[option(name = "--args", delimiters = &['&'])]
+        #[option(name = "--args", delimiters = &['&'], descr = "Arguments to pass to the installer, pipe delimited")]
         args: Vec<&'a str>,
+
+        #[suboptions(name = "flags")]
+        struct Flags {
+            #[option(name = "-u", descr = "Uninstall")]
+            uninstall: bool,
+
+            #[option(name = "-i", descr = "Read list of applications from stdin\ninstead of the default location")]
+            applications_file_from_stdin: bool,
+        },
+
+        #[suboptions(name = "modes")]
+        struct AlternateModes {
+            #[option(name = "-p", descr = "Print path of file with list of applications")]
+            show_path: bool,
+
+            #[option(name = "-a", descr = "Install/Uninstall all applications present in the list")]
+            all: bool,
+        },
     }
 }
