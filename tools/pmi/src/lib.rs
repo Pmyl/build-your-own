@@ -280,12 +280,14 @@ impl<'a> Application<'a> {
 }
 
 fn applications_folder() -> String {
-    format!(
-        "/home/{}/.pmi",
-        std::env::var("SUDO_USER")
-            .or_else(|_| std::env::var("USER"))
-            .unwrap()
-    )
+    std::env::var("PMI_DIR").unwrap_or_else(|_| {
+        format!(
+            "/home/{}/.pmi",
+            std::env::var("SUDO_USER")
+                .or_else(|_| std::env::var("USER"))
+                .unwrap()
+        )
+    })
 }
 
 fn applications_file() -> String {
