@@ -12,6 +12,9 @@ build-your-own-macros = { path = "../../macros" }
 
 [features]
 default = ["apt", "brew", "cargo", "npm", "executable_file", "snap", "install_sh"]
+general = ["brew", "cargo", "npm", "executable_file", "snap", "install_sh"]
+ubuntu = ["general", "apt"]
+fedora = ["general"]
 apt = []
 brew = []
 cargo = []

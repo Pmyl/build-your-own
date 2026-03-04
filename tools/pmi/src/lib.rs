@@ -24,9 +24,9 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
     }
 
     let applications = if options.flags.applications_file_from_stdin {
-        Applications::from_stdin()
+        Applications::from_stdin(!options.flags.no_save)
     } else {
-        Applications::from_file()
+        Applications::from_file(!options.flags.no_save)
     }?;
 
     let installer = Installer(applications);
@@ -244,6 +244,7 @@ fn ask_input(question: &str) -> MyOwnResult<String> {
 
 struct Applications<'a> {
     list: Vec<Application<'a>>,
+    persisted: bool,
 }
 
 #[derive(Clone)]
@@ -295,7 +296,7 @@ fn applications_file() -> String {
 }
 
 impl<'a> Applications<'a> {
-    fn from_file() -> MyOwnResult<Self> {
+    fn from_file(persisted: bool) -> MyOwnResult<Self> {
         std::fs::create_dir_all(applications_folder())?;
         let file_reader = OpenOptions::new()
             .write(true)
@@ -308,15 +309,15 @@ impl<'a> Applications<'a> {
         let list_source = applications_file();
 
         println!("# Applications list from [{}]", list_source);
-        Ok(Applications { list })
+        Ok(Applications { list, persisted })
     }
 
-    fn from_stdin() -> MyOwnResult<Self> {
+    fn from_stdin(persisted: bool) -> MyOwnResult<Self> {
         let list = Applications::<'a>::list_from_reader(stdin())?;
         let list_source = "stdin".to_string();
 
         println!("# Applications list from [{}]", list_source);
-        Ok(Applications { list })
+        Ok(Applications { list, persisted })
     }
 
     fn list_from_reader(mut reader: impl Read) -> MyOwnResult<Vec<Application<'a>>> {
@@ -364,51 +365,61 @@ impl<'a> Applications<'a> {
     }
 
     fn add(&mut self, application: Application<'a>) -> MyOwnResult<()> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(applications_file())
-            .with_error_description(|| format!("Error while loading {}", applications_file()))?;
-
-        writeln!(
-            file,
-            "{}|{}|{}",
-            application.source,
-            application.instructions.application,
-            application.instructions.args.join("&")
-        )?;
-        file.flush()?;
-
         self.list.push(application);
+        let application = &self.list[self.list.len() - 1];
+
+        if self.persisted {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(applications_file())
+                .with_error_description(|| {
+                    format!("Error while loading {}", applications_file())
+                })?;
+
+            writeln!(
+                file,
+                "{}|{}|{}",
+                application.source,
+                application.instructions.application,
+                application.instructions.args.join("&")
+            )?;
+            file.flush()?;
+        }
 
         Ok(())
     }
 
     fn remove(&mut self, application: Application<'a>) -> MyOwnResult<()> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(false)
-            .truncate(true)
-            .open(applications_file())
-            .with_error_description(|| format!("Error while loading {}", applications_file()))?;
-
         let index = self
             .list
             .iter()
             .position(|app| app.instructions.application == application.instructions.application)
             .ok_or_else(|| MyOwnError::ActualError("Couldn't find application to remove".into()))?;
+
         self.list.remove(index);
 
-        for app in &self.list {
-            writeln!(
-                file,
-                "{}|{}|{}",
-                app.source,
-                app.instructions.application,
-                app.instructions.args.join("&")
-            )?;
+        if self.persisted {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(false)
+                .truncate(true)
+                .open(applications_file())
+                .with_error_description(|| {
+                    format!("Error while loading {}", applications_file())
+                })?;
+
+            for app in &self.list {
+                writeln!(
+                    file,
+                    "{}|{}|{}",
+                    app.source,
+                    app.instructions.application,
+                    app.instructions.args.join("&")
+                )?;
+            }
+            file.flush()?;
         }
-        file.flush()?;
 
         Ok(())
     }
@@ -499,19 +510,22 @@ cli_options! {
 
         #[suboptions(name = "flags")]
         struct Flags {
-            #[option(name = "-u", descr = "Uninstall")]
+            #[option(name = "-u", alt_names = &["--uninstall"], descr = "Uninstall")]
             uninstall: bool,
 
-            #[option(name = "-i", descr = "Read list of applications from stdin\ninstead of the default location")]
+            #[option(name = "-i", alt_names = &["--stdin"], descr = "Read list of applications from stdin\ninstead of the default location")]
             applications_file_from_stdin: bool,
+
+            #[option(name = "-n", alt_names = &["--no-save"], descr = "Do not persist installed/uninstalled application in the list of applications")]
+            no_save: bool,
         },
 
         #[suboptions(name = "modes")]
         struct AlternateModes {
-            #[option(name = "-p", descr = "Print path of file with list of applications")]
+            #[option(name = "-p", alt_names = &["--print-path"], descr = "Print path of file with list of applications")]
             show_path: bool,
 
-            #[option(name = "-a", descr = "Install/Uninstall all applications present in the list")]
+            #[option(name = "-a", alt_names = &["--all"], descr = "Install/Uninstall all applications present in the list")]
             all: bool,
         },
     }
