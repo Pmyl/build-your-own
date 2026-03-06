@@ -6,14 +6,21 @@ use std::{
 
 use build_your_own_utils::my_own_error::{DescribableError, MyOwnResult};
 
-use crate::{ApplicationInstructions, applications_folder, sources::SourceManager};
+use crate::{
+    applications::{ApplicationName, applications_folder},
+    sources::SourceManager,
+};
 
 pub(crate) struct ExecutableFile;
 
 impl SourceManager for ExecutableFile {
-    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
-        let file_path_string = application
-            .args
+    fn install<'a, Args: IntoIterator<Item = &'a str>>(
+        &self,
+        application: &'a ApplicationName,
+        args: Args,
+    ) -> MyOwnResult<()> {
+        let args = args.into_iter().collect::<Vec<_>>();
+        let file_path_string = args
             .first()
             .ok_or_else(|| "Executable file installation should have one argument containing the path to the file")?
             .to_string();
@@ -50,7 +57,7 @@ impl SourceManager for ExecutableFile {
             }
         }
 
-        let symlink_target = format!("/usr/bin/{}", application.application);
+        let symlink_target = format!("/usr/bin/{}", application.0);
         println!(
             "# Creating a symlink between {} and {}",
             cached_file_path.to_string_lossy(),
@@ -62,7 +69,7 @@ impl SourceManager for ExecutableFile {
         Ok(())
     }
 
-    fn uninstall(&self, _: &ApplicationInstructions) -> MyOwnResult<()> {
+    fn uninstall<'a>(&self, _: &'a ApplicationName) -> MyOwnResult<()> {
         todo!("Just go and delete it manually from both /usr/bin and pmi folder")
     }
 

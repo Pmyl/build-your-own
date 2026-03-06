@@ -1,4 +1,4 @@
-use std::{error::Error, num::ParseIntError, string::FromUtf8Error};
+use std::{error::Error, fmt::Display, num::ParseIntError, string::FromUtf8Error};
 
 macro_rules! ActualError {
     ($e:ty) => {
@@ -85,6 +85,21 @@ impl From<std::io::Error> for MyOwnError {
             MyOwnError::EarlyExit
         } else {
             MyOwnError::ActualError(Box::new(e))
+        }
+    }
+}
+
+impl Display for MyOwnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MyOwnError::EarlyExit => Ok(()),
+            MyOwnError::ActualError(error) => write!(f, "{}", error),
+            MyOwnError::ActualErrorWithDescription(error, description) => {
+                write!(f, "{}: {}", error, description)
+            }
+            MyOwnError::MyOwnErrorWithDescription(my_own_error, description) => {
+                write!(f, "{}: {}", my_own_error, description)
+            }
         }
     }
 }

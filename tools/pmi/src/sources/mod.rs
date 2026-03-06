@@ -1,23 +1,34 @@
-use std::{fmt::Display, str::FromStr};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
-use crate::ApplicationInstructions;
 use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
+use crate::applications::ApplicationName;
+
 pub(crate) trait SourceManager {
-    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()>;
-    fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()>;
+    fn install<'a, Args: IntoIterator<Item = &'a str>>(
+        &self,
+        application: &'a ApplicationName<'a>,
+        args: Args,
+    ) -> MyOwnResult<()>;
+    fn uninstall<'a>(&self, application: &ApplicationName<'a>) -> MyOwnResult<()>;
     fn has_application(&self, application: &str) -> MyOwnResult<bool>;
 }
 
 mcr::build_sources!(Source {
-    #[cfg(feature = "apt")]                 apt::Apt ("apt"),
-    #[cfg(feature = "brew")]                brew::Brew ("brew"),
-    #[cfg(feature = "cargo")]               cargo::Cargo ("cargo"),
-    #[cfg(feature = "npm")]                 npm::Npm ("npm"),
-    #[cfg(feature = "snap")]                snap::Snap ("snap"),
-    #[cfg(feature = "executable_file")]     executable_file::ExecutableFile ("executable_file"),
-    #[cfg(feature = "install_sh")]          install_sh::InstallSh ("install_sh"),
+    #[cfg(feature = "apt")]             apt::Apt ("apt"),
+    #[cfg(feature = "brew")]            brew::Brew ("brew"),
+    #[cfg(feature = "cargo")]           cargo::Cargo ("cargo"),
+    #[cfg(feature = "npm")]             npm::Npm ("npm"),
+    #[cfg(feature = "snap")]            snap::Snap ("snap"),
+    #[cfg(feature = "executable_file")] executable_file::ExecutableFile ("executable_file"),
+    #[cfg(feature = "install_sh")]      install_sh::InstallSh ("install_sh"),
 });
+
+#[derive(PartialEq, Clone)]
+pub(crate) struct SourceInstructions<'a> {
+    pub source: Source,
+    pub args: Vec<Cow<'a, str>>,
+}
 
 mod mcr {
     macro_rules! build_sources {
@@ -41,25 +52,38 @@ mod mcr {
                 $(
                     $(#[$meta])*
                     $variant
-                ),*
+                ),*,
+                Unknown(String)
             }
 
             impl Source {
-                pub(crate) fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
+                pub(crate) fn install<'a, Args: IntoIterator<Item = &'a str>>(&self, application: &'a ApplicationName<'a>, args: Args) -> MyOwnResult<()> {
                     match self {
                         $(
                             $(#[$meta])*
-                            $name::$variant => $variant.install(application)
-                        ),*
+                            $name::$variant => $variant.install(application, args)
+                        ),*,
+                        $name::Unknown(_) => Err(MyOwnError::ActualError("Attempted to install with Unknown source, bad developer".into()))
                     }
                 }
 
-                pub(crate) fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
+                pub(crate) fn uninstall<'a>(&self, application: &ApplicationName<'a>) -> MyOwnResult<()> {
                     match self {
                         $(
                             $(#[$meta])*
                             $name::$variant => $variant.uninstall(application)
-                        ),*
+                        ),*,
+                        $name::Unknown(_) => Err(MyOwnError::ActualError("Attempted to uninstall with Unknown source, bad developer".into()))
+                    }
+                }
+
+                pub fn from_persisted(s: String) -> Self {
+                    match s.as_str() {
+                        $(
+                            $(#[$meta])*
+                            $as_str => $name::$variant,
+                        )*
+                        _ => $name::Unknown(s),
                     }
                 }
             }
@@ -84,7 +108,8 @@ mod mcr {
                         $(
                             $(#[$meta])*
                             $name::$variant => write!(f, $as_str)
-                        ),*
+                        ),*,
+                        $name::Unknown(name) => write!(f, "{}", name)
                     }
                 }
             }

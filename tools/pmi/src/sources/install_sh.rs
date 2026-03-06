@@ -7,19 +7,22 @@ use std::{
 
 use build_your_own_utils::my_own_error::{DescribableError, MyOwnError, MyOwnResult};
 
-use crate::{ApplicationInstructions, applications_folder, sources::SourceManager};
+use crate::{
+    applications::{ApplicationName, applications_folder},
+    sources::SourceManager,
+};
 
 pub(crate) struct InstallSh;
 
 impl SourceManager for InstallSh {
-    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
-        let file_path = if application
-            .args
-            .first()
-            .map_or(false, |arg| arg == "--curl")
-        {
-            let url = application
-                .args
+    fn install<'a, Args: IntoIterator<Item = &'a str>>(
+        &self,
+        _: &'a ApplicationName,
+        args: Args,
+    ) -> MyOwnResult<()> {
+        let args = args.into_iter().collect::<Vec<_>>();
+        let file_path = if args.first().map_or(false, |arg| *arg == "--curl") {
+            let url = args
                 .get(1)
                 .ok_or_else(|| "curl command requires a URL argument")?;
 
@@ -42,8 +45,7 @@ impl SourceManager for InstallSh {
 
             to_absolute(&temp_file)
         } else {
-            let file_path_string = application
-                .args
+            let file_path_string = args
                 .first()
                 .ok_or_else(|| "Install sh installation should have one argument containing the path to the file")?
                 .to_string();
@@ -99,7 +101,7 @@ impl SourceManager for InstallSh {
         }
     }
 
-    fn uninstall(&self, _: &ApplicationInstructions) -> MyOwnResult<()> {
+    fn uninstall<'a>(&self, _: &'a ApplicationName) -> MyOwnResult<()> {
         todo!("Read the sh script")
     }
 

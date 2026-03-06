@@ -5,17 +5,21 @@ use std::{
 
 use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 
-use crate::{ApplicationInstructions, sources::SourceManager};
+use crate::{applications::ApplicationName, sources::SourceManager};
 
 pub(crate) struct Cargo;
 
 impl SourceManager for Cargo {
-    fn install(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
+    fn install<'a, Args: IntoIterator<Item = &'a str>>(
+        &self,
+        application: &'a ApplicationName,
+        args: Args,
+    ) -> MyOwnResult<()> {
         let status = Command::new("cargo")
             .args(
-                &vec!["install", &application.application]
+                &vec!["install", &application.0]
                     .into_iter()
-                    .chain(application.args.iter().map(|arg| arg.as_ref()))
+                    .chain(args)
                     .collect::<Vec<_>>(),
             )
             .stdout(stdout())
@@ -29,9 +33,9 @@ impl SourceManager for Cargo {
         }
     }
 
-    fn uninstall(&self, application: &ApplicationInstructions) -> MyOwnResult<()> {
+    fn uninstall(&self, application: &ApplicationName) -> MyOwnResult<()> {
         let status = Command::new("cargo")
-            .args(&vec!["uninstall", application.application.as_ref()])
+            .args(&vec!["uninstall", &application.0])
             .stdout(stdout())
             .stderr(stderr())
             .status()?;
