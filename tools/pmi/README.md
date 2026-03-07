@@ -37,12 +37,13 @@ pmi stew --no-save
 
 ### Clone dot files (that will include .pmi folder)
 ```sh
-git clone git@github.com:Pmyl/dotfiles.git
+git clone git@github.com:Pmyl/.dotfiles.git
 ```
 
-### Use stew to link dotfiles
+### Use stow to link dotfiles (trick to be able to overwrite existing configuration)
 ```sh
-stew ./dotfiles
+stow -t ~ --adopt .dotfiles
+git -C .dotfiles reset --hard
 ```
 
 ### Check if the list of applications is there

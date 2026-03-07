@@ -69,7 +69,24 @@ impl<'a> Installer<'a> {
             ))?;
         }
 
-        let application = search_and_install(request)?;
+        let application = match triage_application(request)? {
+            ApplicationTriage::NotFound => {
+                println!("Found no matches, aborting");
+                return Err(MyOwnError::EarlyExit);
+            }
+            ApplicationTriage::Skipped => {
+                println!("Skipped, aborting");
+                return Err(MyOwnError::EarlyExit);
+            }
+            ApplicationTriage::Found(application) => application,
+        };
+
+        println!("## Ready to install application");
+
+        application.install()?;
+
+        println!("## Application installed");
+
         self.0.add(application)?;
 
         println!("## Application added to list");
@@ -183,28 +200,6 @@ pub(crate) fn identify_application<'a, 'b>(
         .collect::<Vec<_>>())
 }
 
-fn search_and_install<'a>(request: RequestApplication<'a>) -> MyOwnResult<Application<'a>> {
-    let application = match triage_application(request)? {
-        ApplicationTriage::NotFound => {
-            println!("Found no matches, aborting");
-            return Err(MyOwnError::EarlyExit);
-        }
-        ApplicationTriage::Skipped => {
-            println!("Skipped, aborting");
-            return Err(MyOwnError::EarlyExit);
-        }
-        ApplicationTriage::Found(application) => application,
-    };
-
-    println!("## Ready to install application");
-
-    application.install()?;
-
-    println!("## Application installed");
-
-    Ok(application)
-}
-
 fn triage_application<'a>(request: RequestApplication<'a>) -> MyOwnResult<ApplicationTriage<'a>> {
     match request.as_application() {
         None => {
@@ -271,10 +266,27 @@ impl<'a> InstallablePersistedApplication<'a> for PersistedApplication<'a> {
         println!(
             "# No sources used to install this application are in use, searching for new source"
         );
-        let application = search_and_install(RequestApplication {
+
+        let application = match triage_application(RequestApplication {
             name: self.name.clone(),
             source_instruction: None,
-        })?;
+        })? {
+            ApplicationTriage::NotFound => {
+                println!("Found no matches, skipping");
+                return Ok(None);
+            }
+            ApplicationTriage::Skipped => {
+                println!("Skipped");
+                return Ok(None);
+            }
+            ApplicationTriage::Found(application) => application,
+        };
+
+        println!("## Ready to install application");
+
+        application.install()?;
+
+        println!("## Application installed");
 
         if self
             .source_instructions

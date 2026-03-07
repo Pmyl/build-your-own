@@ -11,10 +11,10 @@ build-your-own-utils = { path = "../../utils" }
 build-your-own-macros = { path = "../../macros" }
 
 [features]
-default = ["apt", "brew", "cargo", "npm", "executable_file", "snap", "install_sh"]
+default = ["dnf", "apt", "brew", "cargo", "npm", "executable_file", "snap", "install_sh"]
 general = ["brew", "cargo", "npm", "executable_file", "snap", "install_sh"]
 ubuntu = ["general", "apt"]
-fedora = ["general"]
+fedora = ["general", "dnf"]
 apt = []
 brew = []
 cargo = []
@@ -22,3 +22,4 @@ npm = []
 executable_file = []
 snap = []
 install_sh = []
+dnf = []

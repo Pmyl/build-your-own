@@ -139,7 +139,7 @@ impl<'a> PersistedApplication<'a> {
             let source: Source = Source::from_persisted(deserialize_str(&mut raw)?);
             let (args_count_raw, rest) = raw
                 .split_once(':')
-                .ok_or_else(|| "Missing colon when parsing args")?;
+                .ok_or_else(|| "DesNew: Missing colon when parsing args")?;
             let args_count: usize = args_count_raw.parse()?;
             raw = rest;
 
@@ -164,6 +164,14 @@ impl<'a> PersistedApplication<'a> {
 
     fn deserialize_old(raw: &str) -> MyOwnResult<Self> {
         let mut parts = raw.split('|');
+
+        let source = Source::from_persisted(
+            parts
+                .next()
+                .ok_or_else(|| "DesOld: Stored application missing source part")?
+                .to_string(),
+        );
+
         let application = ApplicationName(Cow::Owned(
             parts
                 .next()
@@ -171,16 +179,11 @@ impl<'a> PersistedApplication<'a> {
                 .to_string(),
         ));
 
-        let source = parts
-            .next()
-            .ok_or_else(|| "DesOld: Stored application missing source part")?
-            .parse::<Source>()
-            .error_description("DesOld: when parsing source")?;
-
         let args: Vec<Cow<'_, str>> = parts
             .next()
             .ok_or_else(|| "DesOld: Stored application missing args part")?
             .split('&')
+            .filter(|arg| !arg.is_empty())
             .map(|arg| Cow::Owned(arg.to_string()))
             .collect();
 

@@ -22,9 +22,10 @@ mcr::build_sources!(Source {
     #[cfg(feature = "snap")]            snap::Snap ("snap"),
     #[cfg(feature = "executable_file")] executable_file::ExecutableFile ("executable_file"),
     #[cfg(feature = "install_sh")]      install_sh::InstallSh ("install_sh"),
+    #[cfg(feature = "dnf")]             dnf::Dnf ("dnf"),
 });
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub(crate) struct SourceInstructions<'a> {
     pub source: Source,
     pub args: Vec<Cow<'a, str>>,
