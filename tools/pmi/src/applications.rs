@@ -63,6 +63,10 @@ impl<'a> PersistedApplication<'a> {
         }
     }
 
+    pub fn add_application(&mut self, app: Application<'a>) {
+        self.source_instructions.push(app.source_instruction);
+    }
+
     pub fn identify_same_application(&self, application: &Application<'a>) -> bool {
         self.name == application.name
             && self
@@ -98,11 +102,21 @@ impl<'a> PersistedApplication<'a> {
         serialized
     }
 
-    pub fn deserialize(mut raw: &str) -> MyOwnResult<Self> {
+    pub fn deserialize(raw: &str) -> MyOwnResult<Self> {
+        // Backwards compatibility, old version never started with a number
+        // while new version always starts with a number
+        if raw.starts_with(|c: char| c.is_digit(10)) {
+            Self::deserialize_new(raw)
+        } else {
+            Self::deserialize_old(raw)
+        }
+    }
+
+    fn deserialize_new(mut raw: &str) -> MyOwnResult<Self> {
         fn deserialize_str(input: &mut &str) -> MyOwnResult<String> {
             let (len_str, rest) = input
                 .split_once(':')
-                .ok_or_else(|| "Stored application is not in the correct format")?;
+                .ok_or_else(|| "DesNew: Missing colon when parsing string")?;
             let len: usize = len_str.parse()?;
 
             let (value, remaining) = rest.split_at(len);
@@ -115,7 +129,7 @@ impl<'a> PersistedApplication<'a> {
 
         let (sources_count_raw, rest) = raw
             .split_once(':')
-            .ok_or_else(|| "Stored application is not in the correct format")?;
+            .ok_or_else(|| "DesNew: Missing colon when parsing sources count")?;
         let sources_count: usize = sources_count_raw.parse()?;
         raw = rest;
 
@@ -125,7 +139,7 @@ impl<'a> PersistedApplication<'a> {
             let source: Source = Source::from_persisted(deserialize_str(&mut raw)?);
             let (args_count_raw, rest) = raw
                 .split_once(':')
-                .ok_or_else(|| "Stored application is not in the correct format")?;
+                .ok_or_else(|| "Missing colon when parsing args")?;
             let args_count: usize = args_count_raw.parse()?;
             raw = rest;
 
@@ -145,6 +159,34 @@ impl<'a> PersistedApplication<'a> {
         Ok(Self {
             name: application_name,
             source_instructions: sources_instructions,
+        })
+    }
+
+    fn deserialize_old(raw: &str) -> MyOwnResult<Self> {
+        let mut parts = raw.split('|');
+        let application = ApplicationName(Cow::Owned(
+            parts
+                .next()
+                .ok_or_else(|| "DesOld: Stored application is empty")?
+                .to_string(),
+        ));
+
+        let source = parts
+            .next()
+            .ok_or_else(|| "DesOld: Stored application missing source part")?
+            .parse::<Source>()
+            .error_description("DesOld: when parsing source")?;
+
+        let args: Vec<Cow<'_, str>> = parts
+            .next()
+            .ok_or_else(|| "DesOld: Stored application missing args part")?
+            .split('&')
+            .map(|arg| Cow::Owned(arg.to_string()))
+            .collect();
+
+        Ok(Self {
+            name: application,
+            source_instructions: vec![SourceInstructions { source, args }],
         })
     }
 }
@@ -227,12 +269,8 @@ impl<'a> Persistence<'a> {
     }
 
     fn add_to_list(&mut self, application: Application<'a>) {
-        let index = self.list.iter().position(|pa| pa.name == application.name);
-        if let Some(index) = index {
-            let persisted_app = self.list.get_mut(index).unwrap();
-            persisted_app
-                .source_instructions
-                .push(application.source_instruction);
+        if let Some(persisted_app) = self.list.iter_mut().find(|pa| pa.name == application.name) {
+            persisted_app.add_application(application);
         } else {
             self.list
                 .push(PersistedApplication::from_application(application));
@@ -330,7 +368,7 @@ impl<'a> Persistence<'a> {
 
         let similar_matches = indices
             .into_iter()
-            .map(|i| self.list.get(i).unwrap())
+            .map(|i| &self.list[i])
             .collect::<Vec<_>>();
 
         let perfect_match = request.as_application().and_then(|application| {
