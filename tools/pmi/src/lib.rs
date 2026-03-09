@@ -118,7 +118,7 @@ cli_options! {
         #[option(descr = "What to use to install the app/package, optional\nIf not provided it will find it and ask for confirmation")]
         source: Option<Source>,
 
-        #[option(name = "--args", delimiters = &['&'], descr = "Arguments to pass to the installer, pipe delimited")]
+        #[option(name = "--args", delimiters = &['&'], descr = "Arguments to pass to the installer, '&' delimited")]
         args: Vec<&'a str>,
 
         #[suboptions(name = "flags")]
