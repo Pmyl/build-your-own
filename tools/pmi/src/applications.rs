@@ -203,7 +203,7 @@ impl<'a> Display for PersistedApplication<'a> {
             }
 
             for other in others {
-                write!(f, "\n   ...and (through) {}", first.source)?;
+                write!(f, "\n   ...and (through) {}", other.source)?;
                 if !other.args.is_empty() {
                     write!(f, " {}", other.args.join(" "))?;
                 }
