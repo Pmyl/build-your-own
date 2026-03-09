@@ -202,8 +202,14 @@ impl<'a> Display for PersistedApplication<'a> {
                 write!(f, " {}", first.args.join(" "))?;
             }
 
+            let spacing = if others.len() > 0 {
+                " ".repeat(self.name.0.len().saturating_sub("&".len()))
+            } else {
+                String::new()
+            };
+
             for other in others {
-                write!(f, "\n   ...and (through) {}", other.source)?;
+                write!(f, "\n{}& (through) {}", spacing, other.source)?;
                 if !other.args.is_empty() {
                     write!(f, " {}", other.args.join(" "))?;
                 }
