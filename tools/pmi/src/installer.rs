@@ -18,7 +18,11 @@ impl<'a> Installer<'a> {
 
         let mut new_apps = vec![];
         for persisted_app in &self.0.list {
-            println!("## Installing {}", persisted_app.name.0);
+            let header = format!("## INSTALLING {} ##", persisted_app.name.0);
+            let border = "#".repeat(header.len());
+            println!("{}", border);
+            println!("{}", header);
+            println!("{}", border);
             if let Some(new_app) = persisted_app.install()? {
                 new_apps.push(new_app);
             }
