@@ -53,6 +53,7 @@ impl<'a> Display for Application<'a> {
 pub(crate) struct PersistedApplication<'a> {
     pub name: ApplicationName<'a>,
     pub source_instructions: Vec<SourceInstructions<'a>>,
+    pub system_specific: Vec<Cow<'a, str>>,
 }
 
 impl<'a> PersistedApplication<'a> {
@@ -60,6 +61,7 @@ impl<'a> PersistedApplication<'a> {
         Self {
             name: app.name,
             source_instructions: vec![app.source_instruction],
+            system_specific: vec![],
         }
     }
 
@@ -97,6 +99,13 @@ impl<'a> PersistedApplication<'a> {
             for arg in &instr.args {
                 serialize_str(&mut serialized, arg);
             }
+        }
+
+        serialized.push_str(&self.system_specific.len().to_string());
+        serialized.push(':');
+
+        for sys in &self.system_specific {
+            serialize_str(&mut serialized, sys);
         }
 
         serialized
@@ -156,9 +165,27 @@ impl<'a> PersistedApplication<'a> {
             })
         }
 
+        let mut system_specific = vec![];
+
+        if !raw.is_empty() {
+            let (sys_count_raw, rest) = raw
+                .split_once(':')
+                .ok_or_else(|| "DesNew: Missing colon when parsing system_specific count")?;
+            let sys_count: usize = sys_count_raw.parse()?;
+            raw = rest;
+
+            system_specific = Vec::with_capacity(sys_count);
+
+            for _ in 0..sys_count {
+                let sys = deserialize_str(&mut raw)?;
+                system_specific.push(Cow::Owned(sys));
+            }
+        }
+
         Ok(Self {
             name: application_name,
             source_instructions: sources_instructions,
+            system_specific,
         })
     }
 
@@ -190,6 +217,7 @@ impl<'a> PersistedApplication<'a> {
         Ok(Self {
             name: application,
             source_instructions: vec![SourceInstructions { source, args }],
+            system_specific: vec![],
         })
     }
 }
@@ -253,7 +281,7 @@ impl<'a> Persistence<'a> {
         Ok(Persistence { list, readonly })
     }
 
-    pub fn list_from_reader(mut reader: impl Read) -> MyOwnResult<Vec<PersistedApplication<'a>>> {
+    fn list_from_reader(mut reader: impl Read) -> MyOwnResult<Vec<PersistedApplication<'a>>> {
         let mut content = String::new();
         reader
             .read_to_string(&mut content)
@@ -261,6 +289,7 @@ impl<'a> Persistence<'a> {
 
         content
             .lines()
+            .filter(|l| !l.trim().is_empty())
             .map(|l| PersistedApplication::deserialize(l))
             .collect()
     }
@@ -411,4 +440,79 @@ pub(crate) fn applications_folder() -> String {
 
 pub(crate) fn applications_file() -> String {
     format!("{}/applications", applications_folder())
+}
+
+#[cfg(test)]
+mod test {
+    use std::io::Cursor;
+
+    use crate::applications::Persistence;
+
+    #[test]
+    fn deserializer_v1() {
+        let raw = "\
+apt|test_app|
+snap|test_app2|arg1&arg2
+";
+        let pas = Persistence::list_from_reader(Cursor::new(raw)).expect("To deserialize");
+
+        assert_eq!(pas.len(), 2);
+
+        assert_eq!(pas[0].name.0, "test_app");
+        assert_eq!(pas[0].source_instructions.len(), 1);
+        assert_eq!(pas[0].source_instructions[0].source.to_string(), "apt");
+        assert_eq!(pas[0].source_instructions[0].args.len(), 0);
+
+        assert_eq!(pas[1].name.0, "test_app2");
+        assert_eq!(pas[1].source_instructions.len(), 1);
+        assert_eq!(pas[1].source_instructions[0].source.to_string(), "snap");
+        assert_eq!(pas[1].source_instructions[0].args, &["arg1", "arg2"]);
+    }
+
+    #[test]
+    fn deserializer_v2_backwards_compatible() {
+        let raw = "\
+8:test_app1:3:apt0:
+9:test_app21:4:snap2:4:arg14:arg2
+";
+        let pas = Persistence::list_from_reader(Cursor::new(raw)).expect("To deserialize");
+
+        assert_eq!(pas.len(), 2);
+
+        assert_eq!(pas[0].name.0, "test_app");
+        assert_eq!(pas[0].source_instructions.len(), 1);
+        assert_eq!(pas[0].source_instructions[0].source.to_string(), "apt");
+        assert_eq!(pas[0].source_instructions[0].args.len(), 0);
+        assert_eq!(pas[0].system_specific.len(), 0);
+
+        assert_eq!(pas[1].name.0, "test_app2");
+        assert_eq!(pas[1].source_instructions.len(), 1);
+        assert_eq!(pas[1].source_instructions[0].source.to_string(), "snap");
+        assert_eq!(pas[1].source_instructions[0].args, &["arg1", "arg2"]);
+        assert_eq!(pas[1].system_specific.len(), 0);
+    }
+
+    #[test]
+    fn deserializer_v2() {
+        let raw = "\
+8:test_app1:3:apt0:1:6:HomePC
+9:test_app21:4:snap2:4:arg14:arg20:
+";
+        let pas = Persistence::list_from_reader(Cursor::new(raw)).expect("To deserialize");
+
+        assert_eq!(pas.len(), 2);
+
+        assert_eq!(pas[0].name.0, "test_app");
+        assert_eq!(pas[0].source_instructions.len(), 1);
+        assert_eq!(pas[0].source_instructions[0].source.to_string(), "apt");
+        assert_eq!(pas[0].source_instructions[0].args.len(), 0);
+        assert_eq!(pas[0].system_specific.len(), 1);
+        assert_eq!(pas[0].system_specific[0], "HomePC");
+
+        assert_eq!(pas[1].name.0, "test_app2");
+        assert_eq!(pas[1].source_instructions.len(), 1);
+        assert_eq!(pas[1].source_instructions[0].source.to_string(), "snap");
+        assert_eq!(pas[1].source_instructions[0].args, &["arg1", "arg2"]);
+        assert_eq!(pas[1].system_specific.len(), 0);
+    }
 }

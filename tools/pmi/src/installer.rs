@@ -145,12 +145,49 @@ impl<'a> Installer<'a> {
     }
 }
 
-pub(crate) enum ApplicationConfirmation {
+enum ApplicationTriage<'a> {
+    NotFound,
+    Skipped,
+    Found(Application<'a>),
+}
+
+fn triage_application<'a>(request: RequestApplication<'a>) -> MyOwnResult<ApplicationTriage<'a>> {
+    match request.as_application() {
+        None => {
+            let mut possible_matches = identify_application(&request.name.0)?;
+            match possible_matches.len() {
+                0 => Ok(ApplicationTriage::NotFound),
+                _ => match confirm_application(&possible_matches)? {
+                    ApplicationConfirmation::Confirmed(index) => {
+                        Ok(ApplicationTriage::Found(possible_matches.remove(index)))
+                    }
+                    ApplicationConfirmation::Skipped => Ok(ApplicationTriage::Skipped),
+                },
+            }
+        }
+        Some(application) => Ok(ApplicationTriage::Found(application)),
+    }
+}
+
+fn identify_application<'a, 'b>(application: &'b str) -> MyOwnResult<Vec<Application<'a>>> {
+    Ok(search_source_with_application(application)?
+        .into_iter()
+        .map(|s| Application {
+            source_instruction: SourceInstructions {
+                source: s,
+                args: vec![],
+            },
+            name: ApplicationName(Cow::Owned(application.to_string())),
+        })
+        .collect::<Vec<_>>())
+}
+
+enum ApplicationConfirmation {
     Confirmed(usize),
     Skipped,
 }
 
-pub(crate) fn confirm_application<'a>(
+fn confirm_application<'a>(
     applications: &[Application<'a>],
 ) -> MyOwnResult<ApplicationConfirmation> {
     if let [app] = applications {
@@ -187,45 +224,6 @@ pub(crate) fn confirm_application<'a>(
             Ok(ApplicationConfirmation::Confirmed(answer - 1))
         }
     }
-}
-
-pub(crate) fn identify_application<'a, 'b>(
-    application: &'b str,
-) -> MyOwnResult<Vec<Application<'a>>> {
-    Ok(search_source_with_application(application)?
-        .into_iter()
-        .map(|s| Application {
-            source_instruction: SourceInstructions {
-                source: s,
-                args: vec![],
-            },
-            name: ApplicationName(Cow::Owned(application.to_string())),
-        })
-        .collect::<Vec<_>>())
-}
-
-fn triage_application<'a>(request: RequestApplication<'a>) -> MyOwnResult<ApplicationTriage<'a>> {
-    match request.as_application() {
-        None => {
-            let mut possible_matches = identify_application(&request.name.0)?;
-            match possible_matches.len() {
-                0 => Ok(ApplicationTriage::NotFound),
-                _ => match confirm_application(&possible_matches)? {
-                    ApplicationConfirmation::Confirmed(index) => {
-                        Ok(ApplicationTriage::Found(possible_matches.remove(index)))
-                    }
-                    ApplicationConfirmation::Skipped => Ok(ApplicationTriage::Skipped),
-                },
-            }
-        }
-        Some(application) => Ok(ApplicationTriage::Found(application)),
-    }
-}
-
-pub(crate) enum ApplicationTriage<'a> {
-    NotFound,
-    Skipped,
-    Found(Application<'a>),
 }
 
 trait InstallableApplication {
