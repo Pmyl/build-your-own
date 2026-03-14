@@ -30,9 +30,9 @@ cargo install --path ./build-your-own/tools/pmi --no-default-features --features
 In ubuntu: `sudo apt install build-essential` \
 In fedora: `sudo dnf install gcc`
 
-### Install stew using pmi
+### Install stow using pmi
 ```sh
-pmi stew --no-save
+pmi stow --no-save
 ```
 
 ### Clone dot files (that will include .pmi folder)
