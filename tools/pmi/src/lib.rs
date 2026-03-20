@@ -26,13 +26,16 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
         return Ok(());
     }
 
-    let applications = if options.flags.applications_file_from_stdin {
+    let persistence = if options.flags.applications_file_from_stdin {
         Persistence::from_stdin(!options.flags.no_save)
     } else {
         Persistence::from_file(!options.flags.no_save)
     }?;
 
-    let installer = Installer(applications);
+    let installer = Installer {
+        persistence,
+        has_root_permissions: is_sudo(),
+    };
     let application = match (options.application, &options.source) {
         (Some(application), Some(source)) => Some(RequestApplication {
             name: ApplicationName(Cow::Borrowed(application)),
@@ -49,28 +52,42 @@ pub fn pmi_cli(args: &[&str]) -> MyOwnResult<()> {
     };
 
     match (application, options.modes.all, options.flags.uninstall) {
-        (Some(application), false, false) => installer.install(application),
-        (Some(application), false, true) => installer.uninstall(application),
+        (Some(application), false, false) => {
+            installer.install(application).map_err(|ie| match ie {
+                sources::InstallError::PermissionsMismatch => {
+                    MyOwnError::ActualError("@ Root permissions mismatch".into())
+                }
+                sources::InstallError::Error(my_own_error) => my_own_error,
+            })
+        }
+        (Some(application), false, true) => {
+            installer.uninstall(application).map_err(|ie| match ie {
+                sources::InstallError::PermissionsMismatch => {
+                    MyOwnError::ActualError("@ Root permissions mismatch".into())
+                }
+                sources::InstallError::Error(my_own_error) => my_own_error,
+            })
+        }
         (None, true, false) => {
             ask_permission(&format!(
                 "# This operation will not modify the list of installed applications. Do you want to install {} applications? (Y/n)",
-                installer.0.list.len()
+                installer.persistence.list.len()
             ))?;
             installer.install_all()
         }
         (None, true, true) => {
             ask_permission(&format!(
                 "# This will also remove all the applications from the list of installed applications. Do you want to uninstall {} applications? (Y/n)",
-                installer.0.list.len()
+                installer.persistence.list.len()
             ))?;
             installer.uninstall_all()
         }
         _ => {
             options.print_help(&mut stdout())?;
             println!();
-            if installer.0.list.len() > 0 {
+            if installer.persistence.list.len() > 0 {
                 println!("# Apps installed [{}]:", applications_file());
-                for app in installer.0.list {
+                for app in installer.persistence.list {
                     println!("{}", app);
                 }
             } else {
@@ -100,6 +117,13 @@ fn ask_input(question: &str) -> MyOwnResult<String> {
     let mut answer = String::new();
     tty.read_line(&mut answer)?;
     Ok(answer)
+}
+
+fn is_sudo() -> bool {
+    match std::env::var("SUDO_USER") {
+        Ok(_) => true,
+        Err(_) => false,
+    }
 }
 
 cli_options! {

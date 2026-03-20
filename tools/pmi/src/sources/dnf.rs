@@ -10,6 +10,10 @@ use crate::{applications::ApplicationName, sources::SourceManager};
 pub(crate) struct Dnf;
 
 impl SourceManager for Dnf {
+    fn requires_root_permissions() -> bool {
+        true
+    }
+
     fn install<'a, Args: IntoIterator<Item = &'a str>>(
         &self,
         application: &'a ApplicationName,

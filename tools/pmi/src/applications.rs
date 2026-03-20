@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     fmt::Display,
     fs::OpenOptions,
     io::{Read, Write, stdin},
@@ -12,7 +13,7 @@ use build_your_own_utils::{
 
 use crate::sources::{Source, SourceInstructions};
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Eq, Hash)]
 pub(crate) struct ApplicationName<'a>(pub Cow<'a, str>);
 
 pub(crate) struct RequestApplication<'a> {
@@ -326,6 +327,12 @@ impl<'a> Persistence<'a> {
             })?;
 
         self.list.remove(app_index);
+        self.persist()
+    }
+
+    pub fn remove_many(&mut self, to_remove: Vec<ApplicationName<'a>>) -> MyOwnResult<()> {
+        let to_remove = HashSet::<ApplicationName<'a>>::from_iter(to_remove);
+        self.list.retain(|a| !to_remove.contains(&a.name));
         self.persist()
     }
 

@@ -7,30 +7,60 @@ use crate::{
         Application, ApplicationName, PersistedApplication, Persistence, RequestApplication,
     },
     ask_input, ask_permission,
-    sources::{Source, SourceInstructions, search_source_with_application},
+    sources::{InstallError, Source, SourceInstructions, search_source_with_application},
 };
 
-pub(crate) struct Installer<'a>(pub Persistence<'a>);
+pub(crate) struct Installer<'a> {
+    pub persistence: Persistence<'a>,
+    pub has_root_permissions: bool,
+}
 
 impl<'a> Installer<'a> {
     pub(crate) fn install_all(mut self) -> MyOwnResult<()> {
         println!("## Ready to install all applications");
 
         let mut new_apps = vec![];
-        for persisted_app in &self.0.list {
+        let mut apps_permissions_mismatch = vec![];
+        for persisted_app in &self.persistence.list {
             let header = format!("## INSTALLING {} ##", persisted_app.name.0);
             let border = "#".repeat(header.len());
             println!("{}", border);
             println!("{}", header);
             println!("{}", border);
-            if let Some(new_app) = persisted_app.install()? {
-                new_apps.push(new_app);
+            match persisted_app.install(self.has_root_permissions) {
+                Ok(Some(new_app)) => new_apps.push(new_app),
+                Ok(None) => {}
+                Err(InstallError::Error(e)) => return Err(e),
+                Err(InstallError::PermissionsMismatch) => {
+                    apps_permissions_mismatch.push(persisted_app.name.clone())
+                }
             }
         }
 
-        self.0.add_many(new_apps)?;
+        if apps_permissions_mismatch.is_empty() {
+            self.persistence.add_many(new_apps)?;
+            println!("## All applications installed");
+        } else {
+            println!(
+                "## Some ({}) applications installed and some ({}) not",
+                new_apps.len(),
+                apps_permissions_mismatch.len()
+            );
+            self.persistence.add_many(new_apps)?;
 
-        println!("## All applications installed");
+            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+            println!(
+                "@ Root permissions mismatch: Needed {} received {}",
+                !self.has_root_permissions, self.has_root_permissions
+            );
+            println!(
+                "@ Rerun install all with opposite root
+                permissions to install the following applications"
+            );
+            for (i, app) in apps_permissions_mismatch.iter().enumerate() {
+                println!("@@ {}: {}", i + 1, app.0);
+            }
+        }
 
         Ok(())
     }
@@ -38,27 +68,56 @@ impl<'a> Installer<'a> {
     pub(crate) fn uninstall_all(mut self) -> MyOwnResult<()> {
         println!("## Ready to uninstall all applications");
 
-        for persisted_app in &self.0.list {
+        let mut apps_permissions_mismatch = vec![];
+        let mut uninstalled = vec![];
+        for persisted_app in &self.persistence.list {
             println!("## Uninstalling {}", persisted_app.name.0);
-            persisted_app.uninstall()?
+
+            match persisted_app.uninstall(self.has_root_permissions) {
+                Ok(_) => uninstalled.push(persisted_app.name.clone()),
+                Err(InstallError::Error(e)) => return Err(e),
+                Err(InstallError::PermissionsMismatch) => {
+                    apps_permissions_mismatch.push(persisted_app.name.clone())
+                }
+            }
         }
 
-        println!("## All applications uninstalled");
+        if apps_permissions_mismatch.is_empty() {
+            println!("## All applications uninstalled");
+            self.persistence.remove_all()?;
+            println!("## Applications removed from list");
+        } else {
+            println!(
+                "## Some ({}) applications uninstalled and some ({}) retained",
+                uninstalled.len(),
+                apps_permissions_mismatch.len()
+            );
+            self.persistence.remove_many(uninstalled)?;
 
-        self.0.remove_all()?;
-
-        println!("## Application removed from list");
+            println!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+            println!(
+                "@ Root permissions mismatch: Needed {} received {}",
+                !self.has_root_permissions, self.has_root_permissions
+            );
+            println!(
+                "@ Rerun uninstall all with opposite root
+                permissions to uninstall the following applications"
+            );
+            for (i, app) in apps_permissions_mismatch.iter().enumerate() {
+                println!("@@ {}: {}", i + 1, app.0);
+            }
+        }
 
         Ok(())
     }
 
-    pub(crate) fn install(mut self, request: RequestApplication<'a>) -> MyOwnResult<()> {
-        let already_installed = self.0.is_already_installed(&request);
+    pub(crate) fn install(mut self, request: RequestApplication<'a>) -> Result<(), InstallError> {
+        let already_installed = self.persistence.is_already_installed(&request);
 
         if let Some(_) = already_installed.perfect_match {
-            return Err(MyOwnError::ActualError(
-                format!("Application already installed").into(),
-            ));
+            return Err(
+                MyOwnError::ActualError(format!("Application already installed").into()).into(),
+            );
         }
 
         if already_installed.similar_matches.len() > 0 {
@@ -76,66 +135,72 @@ impl<'a> Installer<'a> {
         let application = match triage_application(request)? {
             ApplicationTriage::NotFound => {
                 println!("Found no matches, aborting");
-                return Err(MyOwnError::EarlyExit);
+                Err(MyOwnError::EarlyExit)
             }
             ApplicationTriage::Skipped => {
                 println!("Skipped, aborting");
-                return Err(MyOwnError::EarlyExit);
+                Err(MyOwnError::EarlyExit)
             }
-            ApplicationTriage::Found(application) => application,
-        };
+            ApplicationTriage::Found(application) => Ok(application),
+        }?;
 
         println!("## Ready to install application");
 
-        application.install()?;
+        application.install(self.has_root_permissions)?;
 
         println!("## Application installed");
 
-        self.0.add(application)?;
+        self.persistence.add(application)?;
 
         println!("## Application added to list");
 
         Ok(())
     }
 
-    pub(crate) fn uninstall(mut self, request: RequestApplication<'a>) -> MyOwnResult<()> {
+    pub(crate) fn uninstall(mut self, request: RequestApplication<'a>) -> Result<(), InstallError> {
         println!("## Ready to uninstall application");
 
         match request.as_application() {
             None => {
                 // Uninstall all matching
-                let application_to_remove = self.0.get_application_by_name(&request.name.0);
+                let application_to_remove =
+                    self.persistence.get_application_by_name(&request.name.0);
 
                 let Some(persisted_app) = application_to_remove else {
-                    return Err(MyOwnError::ActualError(
-                        "Application is not installed".into(),
-                    ));
+                    return Err(
+                        MyOwnError::ActualError("Application is not installed".into()).into(),
+                    );
                 };
 
                 println!("## Found application to uninstall",);
                 println!("## Uninstalling {} from all sources", persisted_app.name.0);
 
-                persisted_app.uninstall()?;
+                persisted_app.uninstall(self.has_root_permissions)?;
                 println!("## Application uninstalled");
 
-                self.0.remove(&persisted_app.name.clone())?;
+                self.persistence.remove(&persisted_app.name.clone())?;
 
                 println!("## Application removed from list");
             }
             Some(application) => {
                 // Uninstall perfect match
-                if let None = self.0.is_already_installed(&request).perfect_match {
+                if let None = self
+                    .persistence
+                    .is_already_installed(&request)
+                    .perfect_match
+                {
                     return Err(MyOwnError::ActualError(
                         "Application is not installed through requested source".into(),
-                    ));
+                    )
+                    .into());
                 }
 
                 println!("## Uninstalling {}", application);
 
-                application.uninstall()?;
+                application.uninstall(self.has_root_permissions)?;
                 println!("## Application uninstalled");
 
-                self.0.remove_specific(&application)?;
+                self.persistence.remove_specific(&application)?;
 
                 println!("## Application removed from list");
             }
@@ -229,31 +294,34 @@ pub(crate) enum ApplicationTriage<'a> {
 }
 
 trait InstallableApplication {
-    fn install(&self) -> MyOwnResult<()>;
-    fn uninstall(&self) -> MyOwnResult<()>;
+    fn install(&self, has_root_permissions: bool) -> Result<(), InstallError>;
+    fn uninstall(&self, has_root_permissions: bool) -> Result<(), InstallError>;
 }
 
 impl<'a> InstallableApplication for Application<'a> {
-    fn install(&self) -> MyOwnResult<()> {
+    fn install(&self, has_root_permissions: bool) -> Result<(), InstallError> {
         self.source_instruction.source.install(
             &self.name,
             self.source_instruction.args.iter().map(|arg| arg.as_ref()),
+            has_root_permissions,
         )
     }
 
-    fn uninstall(&self) -> MyOwnResult<()> {
-        self.source_instruction.source.uninstall(&self.name)
+    fn uninstall(&self, has_root_permissions: bool) -> Result<(), InstallError> {
+        self.source_instruction
+            .source
+            .uninstall(&self.name, has_root_permissions)
     }
 }
 
 trait InstallablePersistedApplication<'a> {
     // Return Some(Application) if new source is used
-    fn install(&self) -> MyOwnResult<Option<Application<'a>>>;
-    fn uninstall(&self) -> MyOwnResult<()>;
+    fn install(&self, has_root_permissions: bool) -> Result<Option<Application<'a>>, InstallError>;
+    fn uninstall(&self, has_root_permissions: bool) -> Result<(), InstallError>;
 }
 
 impl<'a> InstallablePersistedApplication<'a> for PersistedApplication<'a> {
-    fn install(&self) -> MyOwnResult<Option<Application<'a>>> {
+    fn install(&self, has_root_permissions: bool) -> Result<Option<Application<'a>>, InstallError> {
         for source_instruction in &self.source_instructions {
             if let Source::Unknown(name) = &source_instruction.source {
                 println!("# Skipping source {} because not in use", name);
@@ -264,6 +332,7 @@ impl<'a> InstallablePersistedApplication<'a> for PersistedApplication<'a> {
             source_instruction.source.install(
                 &self.name,
                 source_instruction.args.iter().map(|arg| arg.as_ref()),
+                has_root_permissions,
             )?;
             break;
         }
@@ -288,7 +357,7 @@ impl<'a> InstallablePersistedApplication<'a> for PersistedApplication<'a> {
 
         println!("## Ready to install application");
 
-        application.install()?;
+        application.install(has_root_permissions)?;
 
         println!("## Application installed");
 
@@ -302,13 +371,15 @@ impl<'a> InstallablePersistedApplication<'a> for PersistedApplication<'a> {
         }
     }
 
-    fn uninstall(&self) -> MyOwnResult<()> {
+    fn uninstall(&self, has_root_permissions: bool) -> Result<(), InstallError> {
         for source_instruction in &self.source_instructions {
             if let Source::Unknown(name) = &source_instruction.source {
                 println!("# Skipping source {} because not in use", name);
                 continue;
             }
-            source_instruction.source.uninstall(&self.name)?;
+            source_instruction
+                .source
+                .uninstall(&self.name, has_root_permissions)?;
         }
         Ok(())
     }

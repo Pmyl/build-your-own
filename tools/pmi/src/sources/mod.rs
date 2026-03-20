@@ -5,6 +5,9 @@ use build_your_own_utils::my_own_error::{MyOwnError, MyOwnResult};
 use crate::applications::ApplicationName;
 
 pub(crate) trait SourceManager {
+    fn requires_root_permissions() -> bool {
+        return false;
+    }
     fn install<'a, Args: IntoIterator<Item = &'a str>>(
         &self,
         application: &'a ApplicationName<'a>,
@@ -29,6 +32,17 @@ mcr::build_sources!(Source {
 pub(crate) struct SourceInstructions<'a> {
     pub source: Source,
     pub args: Vec<Cow<'a, str>>,
+}
+
+pub(crate) enum InstallError {
+    PermissionsMismatch,
+    Error(MyOwnError),
+}
+
+impl From<MyOwnError> for InstallError {
+    fn from(value: MyOwnError) -> Self {
+        InstallError::Error(value)
+    }
 }
 
 mod mcr {
@@ -58,23 +72,31 @@ mod mcr {
             }
 
             impl Source {
-                pub(crate) fn install<'a, Args: IntoIterator<Item = &'a str>>(&self, application: &'a ApplicationName<'a>, args: Args) -> MyOwnResult<()> {
+                pub(crate) fn install<'a, Args: IntoIterator<Item = &'a str>>(&self, application: &'a ApplicationName<'a>, args: Args, has_root_permissions: bool) -> Result<(), InstallError> {
                     match self {
                         $(
                             $(#[$meta])*
-                            $name::$variant => $variant.install(application, args)
+                            $name::$variant => if has_root_permissions == $variant::requires_root_permissions() {
+                                Ok($variant.install(application, args)?)
+                            } else {
+                                Err(InstallError::PermissionsMismatch)
+                            }
                         ),*,
-                        $name::Unknown(_) => Err(MyOwnError::ActualError("Attempted to install with Unknown source, bad developer".into()))
+                        $name::Unknown(_) => Err(InstallError::Error(MyOwnError::ActualError("Attempted to install with Unknown source, bad developer".into())))
                     }
                 }
 
-                pub(crate) fn uninstall<'a>(&self, application: &ApplicationName<'a>) -> MyOwnResult<()> {
+                pub(crate) fn uninstall<'a>(&self, application: &ApplicationName<'a>, has_root_permissions: bool) -> Result<(), InstallError> {
                     match self {
                         $(
                             $(#[$meta])*
-                            $name::$variant => $variant.uninstall(application)
+                            $name::$variant => if has_root_permissions == $variant::requires_root_permissions() {
+                                Ok($variant.uninstall(application)?)
+                            } else {
+                                Err(InstallError::PermissionsMismatch)
+                            }
                         ),*,
-                        $name::Unknown(_) => Err(MyOwnError::ActualError("Attempted to uninstall with Unknown source, bad developer".into()))
+                        $name::Unknown(_) => Err(InstallError::Error(MyOwnError::ActualError("Attempted to uninstall with Unknown source, bad developer".into())))
                     }
                 }
 
